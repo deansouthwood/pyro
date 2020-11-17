@@ -1,0 +1,342 @@
+#################################
+# POLISHING WITH ILLUMINA READS #
+#################################
+
+### Requires data cleaning and assembly first
+### Inputs are wildcarded to work for any assembler
+
+# rule short_hypo:
+# # HyPo Version x #
+# #     Can polish with short or short+long reads
+# #     requires minimap-ed sorted indexed bam
+# #     -s = genome size
+# #     -c = approx coverage by short reads
+    # input:
+        # asm="2-polishing/{techs}/{asm}/{asm}{longpol}.fa",
+        # in1="reads/ILL/ill_1.fastq.gz",
+        # in2="reads/ILL/ill_2.fastq.gz"
+    # output:
+        # out1="2-polishing/{techs}/{asm}/{asm}{longpol}-short-hypo-1.fa",
+        # m1="benchmarks/{techs}/{asm}/{asm}{longpol}-short-hypo-m1-timing.txt",
+        # h1="benchmarks/{techs}/{asm}/{asm}{longpol}-short-hypo-h1-timing.txt",
+        # out2="2-polishing/{techs}/{asm}/{asm}{longpol}-short-hypo-2.fa",
+        # m2="benchmarks/{techs}/{asm}/{asm}{longpol}-short-hypo-m2-timing.txt",
+        # h2="benchmarks/{techs}/{asm}/{asm}{longpol}-short-hypo-h2-timing.txt",
+        # out3="2-polishing/{techs}/{asm}/{asm}{longpol}-short-hypo-3.fa",
+        # m3="benchmarks/{techs}/{asm}/{asm}{longpol}-short-hypo-m3-timing.txt",
+        # h3="benchmarks/{techs}/{asm}/{asm}{longpol}-short-hypo-h3-timing.txt"
+    # log:
+        # "logs/{techs}/{asm}/{asm}{longpol}-short-hypo.log"
+    # benchmark:
+        # "benchmarks/{techs}/{asm}/{asm}{longpol}-short-hypo-total-benchmark.txt"
+    # threads: 20
+    # shell:
+        # """
+        # module load minimap2/2.16 samtools/1.9.0 gcc/9.2.0 kmc/3.0.0
+        # mkdir -p 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-hypo-wkdir
+        # cd 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-hypo-wkdir
+        # cp ../../../../{input.asm} asm.fa;
+
+        # echo -e '../../../../{input.in1}\n../../../../{input.in2}' > input.fofn;
+
+        # /usr/bin/time \
+            # -o ../../../../{output.m1} \
+            # -v /bin/bash -c \
+                # 'minimap2 --secondary=no --MD -ax sr -t {threads} asm.fa ../../../../{input.in1} ../../../../{input.in2} | samtools view -Sb - | samtools sort -o out1.bam -@ {threads} -; \
+                # samtools index out1.bam;'; 
+        # /usr/bin/time \
+            # -o ../../../../{output.h1} \
+            # -v hypo -d asm.fa -r @input.fofn -s {config[genomesize]} -c {config[ill-cov]} -b out1.bam -p 80 -t {threads} -o out1.fa;
+        # cp out1.fa ../../../../{output.out1};
+        
+        # /usr/bin/time \
+            # -o ../../../../{output.m2} \
+            # -v /bin/bash -c \
+                # 'minimap2 --secondary=no --MD -ax sr -t {threads} out1.fa ../../../../{input.in1} ../../../../{input.in2} | samtools view -Sb - | samtools sort -o out2.bam -@ {threads} -; \
+                # samtools index out2.bam;';
+        # /usr/bin/time \
+            # -o ../../../../{output.h2} \
+            # -v hypo -d out1.fa -r @input.fofn -s {config[genomesize]} -c {config[ill-cov]} -b out2.bam -p 80 -t {threads} -o out2.fa;
+        # cp out2.fa ../../../../{output.out2};
+
+        # /usr/bin/time \
+            # -o ../../../../{output.m3} \
+            # -v /bin/bash -c \
+                # 'minimap2 --secondary=no --MD -ax sr -t {threads} out2.fa ../../../../{input.in1} ../../../../{input.in2} | samtools view -Sb - | samtools sort -o out3.bam -@ {threads} -; \
+                # samtools index out3.bam;'; 
+        # /usr/bin/time \
+            # -o ../../../../{output.h3} \
+            # -v hypo -d out2.fa -r @input.fofn -s {config[genomesize]} -c {config[ill-cov]} -b out3.bam -p 80 -t {threads} -o out3.fa;
+        # cp out3.fa ../../../../{output.out3};
+
+        # cd .. && rm -rf {wildcards.asm}{wildcards.longpol}-short-hypo-wkdir && cd ../../..
+        # """
+
+# rule short_nextpolish:
+# # NextPolish Version x #
+# #     Does short-read or long-read polishing
+    # input:
+        # asm="2-polishing/{techs}/{asm}/{asm}{longpol}.fa",
+        # in1="reads/ILL/ill_1.fastq.gz",
+        # in2="reads/ILL/ill_2.fastq.gz"
+    # output:
+        # out1="2-polishing/{techs}/{asm}/{asm}{longpol}-short-nextpolish-1.fa",
+        # out2="2-polishing/{techs}/{asm}/{asm}{longpol}-short-nextpolish-2.fa",
+        # out3="2-polishing/{techs}/{asm}/{asm}{longpol}-short-nextpolish-3.fa",
+        # n1="benchmarks/{techs}/{asm}/{asm}{longpol}-short-nextpolish-n1-timing.txt",
+        # n2="benchmarks/{techs}/{asm}/{asm}{longpol}-short-nextpolish-n2-timing.txt",
+        # n3="benchmarks/{techs}/{asm}/{asm}{longpol}-short-nextpolish-n3-timing.txt"
+    # log:
+        # "logs/{techs}/{asm}/{asm}{longpol}-short-nextpolish.log"
+    # benchmark:
+        # "benchmarks/{techs}/{asm}/{asm}{longpol}-short-nextpolish-total-benchmark.txt"
+    # threads: 20
+    # shell:
+        # """
+        # module load bbmap/38.37 bwa/0.7.15 samtools/1.9.0 
+        # mkdir -p 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-nextpolish-wkdir
+        # cp {input.asm} 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-nextpolish-wkdir/asm.fa
+        # cd 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-nextpolish-wkdir
+
+        # echo -e "../../../../{input.in1}\n../../../../{input.in2}" > sgs.fofn;
+
+        # echo -e "job_type = local\njob_prefix = run-1\ntask = 12\nrewrite = yes\nmultithread_jobs = 5\nparallel_jobs = 4\ngenome = ./asm.fa\ngenome_size = auto\nworkdir = ./01_rundir\npolish_options = -p {{multithread_jobs}}\nsgs_fofn = sgs.fofn\nsgs_options = -bwa" > run-1.cfg;
+        # /usr/bin/time \
+            # -o ../../../../{output.n1} \
+            # -v ../../../../../../benchmarking/NextPolish/nextPolish run-1.cfg;
+        # cp 01_rundir/genome.nextpolish.fasta ../../../../{output.out1};
+
+        # echo -e "job_type = local\njob_prefix = run-2\ntask = 12\nrewrite = yes\nmultithread_jobs = 5\nparallel_jobs = 4\ngenome = 01_rundir/genome.nextpolish.fasta\ngenome_size = auto\nworkdir = ./02_rundir\npolish_options = -p {{multithread_jobs}}\nsgs_fofn = sgs.fofn\nsgs_options = -bwa" > run-2.cfg;
+        # /usr/bin/time \
+            # -o ../../../../{output.n2} \
+            # -v ../../../../../../benchmarking/NextPolish/nextPolish run-2.cfg;
+        # cp 02_rundir/genome.nextpolish.fasta ../../../../{output.out2};
+
+        # echo -e "job_type = local\njob_prefix = run-3\ntask = 12\nrewrite = yes\nmultithread_jobs = 5\nparallel_jobs = 4\ngenome = 02_rundir/genome.nextpolish.fasta\ngenome_size = auto\nworkdir = ./03_rundir\npolish_options = -p {{multithread_jobs}}\nsgs_fofn = sgs.fofn\nsgs_options = -bwa" > run-3.cfg;
+        # /usr/bin/time \
+            # -o ../../../../{output.n3} \
+            # -v ../../../../../../benchmarking/NextPolish/nextPolish run-3.cfg;
+        # cp 03_rundir/genome.nextpolish.fasta ../../../../{output.out3};
+
+        # cd .. && rm -rf {wildcards.asm}{wildcards.longpol}-short-nextpolish-wkdir && cd ../../..
+        # """
+
+# rule short_ntedit:
+# # ntEdit Version x #
+# #     Fast and light
+# #     needs bloom filter calculated first then polishing is fast
+    # input:
+        # asm="2-polishing/{techs}/{asm}/{asm}{longpol}.fa",
+        # in1="reads/ILL/ill_1.fastq.gz",
+        # in2="reads/ILL/ill_2.fastq.gz"
+    # output:
+        # out1="2-polishing/{techs}/{asm}/{asm}{longpol}-short-ntedit-1.fa",
+        # out2="2-polishing/{techs}/{asm}/{asm}{longpol}-short-ntedit-2.fa",
+        # out3="2-polishing/{techs}/{asm}/{asm}{longpol}-short-ntedit-3.fa",
+        # h="benchmarks/{techs}/{asm}/{asm}{longpol}-short-ntedit-hit-timing.txt",
+        # e1="benchmarks/{techs}/{asm}/{asm}{longpol}-short-ntedit-e1-timing.txt",
+        # e2="benchmarks/{techs}/{asm}/{asm}{longpol}-short-ntedit-e2-timing.txt",
+        # e3="benchmarks/{techs}/{asm}/{asm}{longpol}-short-ntedit-e3-timing.txt"
+    # log:
+        # "logs/{techs}/{asm}/{asm}{longpol}-short-ntedit.log"
+    # benchmark:
+        # "benchmarks/{techs}/{asm}/{asm}{longpol}-short-ntedit-total-benchmark.txt"
+    # threads: 20
+    # shell:
+        # """
+        # mkdir -p 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-ntedit-wkdir
+        # cp {input.asm} 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-ntedit-wkdir/asm.fa
+        # cd 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-ntedit-wkdir
+        # echo '../../../../{input.in1}\n../../../../{input.in2}' > inputs.fofn;
+
+        # /usr/bin/time \
+            # -o ../../../../{output.h} \
+            # -v nthits -b 36 -k 50 -t {threads} -p ntedit-bloom --outbloom --solid @inputs.fofn;
+
+        # /usr/bin/time \
+            # -o ../../../../{output.e1} \
+            # -v ntedit -k 50 -f asm.fa -r ntedit-bloom*.bf -b ntedit-1 -t {threads};
+        # cp ntedit-1_edited.fa ../../../../{output.out1};
+
+        # /usr/bin/time \
+            # -o ../../../../{output.e2} \
+            # -v ntedit -k 50 -f ntedit-1_edited.fa -r ntedit-bloom*.bf -b ntedit-2 -t {threads};
+        # cp ntedit-2_edited.fa ../../../../{output.out2};
+
+        # /usr/bin/time \
+            # -o ../../../../{output.e3} \
+            # -v ntedit -k 50 -f ntedit-2_edited.fa -r ntedit-bloom*.bf -b ntedit-3 -t {threads}
+        # cp ntedit-3_edited.fa ../../../../{output.out3}
+
+        # cd .. && rm -rf {wildcards.asm}{wildcards.longpol}-short-ntedit-wkdir && cd ../../..
+        # """
+
+# rule short_pilon:
+# # Pilon Version x #
+# #     Thorough if a little slow
+# #     relies on jar file in scripts/pilon.jar
+# #     also needs memory cap specified in jar call
+    # input:
+        # asm="2-polishing/{techs}/{asm}/{asm}{longpol}.fa",
+        # in1="reads/ILL/ill_1.fastq.gz",
+        # in2="reads/ILL/ill_2.fastq.gz"
+    # output:
+        # out1="2-polishing/{techs}/{asm}/{asm}{longpol}-short-pilon-1.fa",
+        # out2="2-polishing/{techs}/{asm}/{asm}{longpol}-short-pilon-2.fa",
+        # out3="2-polishing/{techs}/{asm}/{asm}{longpol}-short-pilon-3.fa",
+        # b1="benchmarks/{techs}/{asm}/{asm}{longpol}-short-pilon-b1-timing.txt",
+        # p1="benchmarks/{techs}/{asm}/{asm}{longpol}-short-pilon-p1-timing.txt",
+        # b2="benchmarks/{techs}/{asm}/{asm}{longpol}-short-pilon-b2-timing.txt",
+        # p2="benchmarks/{techs}/{asm}/{asm}{longpol}-short-pilon-p2-timing.txt",
+        # b3="benchmarks/{techs}/{asm}/{asm}{longpol}-short-pilon-b3-timing.txt",
+        # p3="benchmarks/{techs}/{asm}/{asm}{longpol}-short-pilon-p3-timing.txt"
+    # log:
+        # "logs/{techs}/{asm}/{asm}{longpol}-short-pilon.log"
+    # benchmark:
+        # "benchmarks/{techs}/{asm}/{asm}{longpol}-short-pilon-total-benchmark.txt"
+    # threads: 20
+    # shell:
+        # """
+        # module load bwa/0.7.15 samtools/1.9.0
+        # mkdir -p 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-pilon-wkdir
+        # cp {input.asm} 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-pilon-wkdir/asm.fa
+        # cd 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-pilon-wkdir
+
+        # /usr/bin/time \
+            # -o ../../../../{output.b1} \
+            # -v /bin/bash -c \
+                # 'bwa index asm.fa; \
+                # bwa mem -t {threads} asm.fa ../../../../{input.in1} ../../../../{input.in2} | samtools sort -o out1.bam -@ {threads} -; \
+                # samtools index out1.bam';
+        # /usr/bin/time \
+            # -o ../../../../{output.p1} \
+            # -v java -Xmx{config[mem]}G -jar ../../../../scripts/pilon.jar --genome asm.fa --frags out1.bam --output short-pilon-1 --fix all --threads {threads};
+        # cp short-pilon-1.fasta ../../../../{output.out1};
+
+        # /usr/bin/time \
+            # -o ../../../../{output.b2} \
+            # -v /bin/bash -c \
+                # 'bwa index short-pilon-1.fasta; \
+                # bwa mem -t {threads} short-pilon-1.fasta ../../../../{input.in1} ../../../../{input.in2} | samtools sort -o out2.bam -@ {threads} -; \
+                # samtools index out2.bam';
+        # /usr/bin/time \
+            # -o ../../../../{output.p2} \
+            # -v java -Xmx{config[mem]}G -jar ../../../../scripts/pilon.jar --genome short-pilon-1.fasta --frags out2.bam --output short-pilon-2 --fix all --threads {threads};
+        # cp short-pilon-2.fasta ../../../../{output.out2};
+
+        # /usr/bin/time \
+            # -o ../../../../{output.b3} \
+            # -v /bin/bash -c \
+                # 'bwa index short-pilon-2.fasta; \
+                # bwa mem -t {threads} short-pilon-2.fasta ../../../../{input.in1} ../../../../{input.in2} | samtools sort -o out3.bam -@ {threads} -; \
+                # samtools index out3.bam';
+        # /usr/bin/time \
+            # -o ../../../../{output.p3} \
+            # -v java -Xmx{config[mem]}G -jar ../../../../scripts/pilon.jar --genome short-pilon-2.fasta --frags out3.bam --output short-pilon-3 --fix all --threads {threads};
+        # cp short-pilon-3.fasta ../../../../{output.out3};
+
+        # cd .. && rm -rf {wildcards.asm}{wildcards.longpol}-short-pilon-wkdir && cd ../../..
+        # """
+
+# rule short_polca:
+# # PolCA Version x #
+# #     Not really stand-alone but works through MaSuRCA
+# #     lightweight memory-wise but takes a bit of time
+    # input:
+        # asm="2-polishing/{techs}/{asm}/{asm}{longpol}.fa",
+        # in1="reads/ILL/ill_1.fastq.gz",
+        # in2="reads/ILL/ill_2.fastq.gz"
+    # output:
+        # out1="2-polishing/{techs}/{asm}/{asm}{longpol}-short-polca-1.fa",
+        # out2="2-polishing/{techs}/{asm}/{asm}{longpol}-short-polca-2.fa",
+        # out3="2-polishing/{techs}/{asm}/{asm}{longpol}-short-polca-3.fa",
+        # p1="benchmarks/{techs}/{asm}/{asm}{longpol}-short-polca-p1-timing.txt",
+        # p2="benchmarks/{techs}/{asm}/{asm}{longpol}-short-polca-p2-timing.txt",
+        # p3="benchmarks/{techs}/{asm}/{asm}{longpol}-short-polca-p3-timing.txt"
+    # log:
+        # "logs/{techs}/{asm}/{asm}{longpol}-short-polca.log"
+    # benchmark:
+        # "benchmarks/{techs}/{asm}/{asm}{longpol}-short-polca-total-benchmark.txt"
+    # threads: 20
+    # shell:
+        # """
+        # module load bwa/0.7.15
+        # mkdir -p 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-polca-wkdir
+        # cp {input.asm} 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-polca-wkdir/asm.fa;
+        # cd 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-polca-wkdir
+
+        # /usr/bin/time \
+            # -o ../../../../{output.p1} \
+            # -v bash ../../../../../../benchmarking/MaSuRCA-3.3.7/bin/polca.sh -a asm.fa -r '../../../../{input.in1} ../../../../{input.in2}' -t {threads};
+        # cp asm.fa.PolcaCorrected.fa ../../../../{output.out1}; 
+
+        # /usr/bin/time \
+            # -o ../../../../{output.p2} \
+            # -v bash ../../../../../../benchmarking/MaSuRCA-3.3.7/bin/polca.sh -a asm.fa.PolcaCorrected.fa -r '../../../../{input.in1} ../../../../{input.in2}' -t {threads};
+        # cp asm.fa.PolcaCorrected.fa.PolcaCorrected.fa ../../../../{output.out2};
+
+        # /usr/bin/time \
+            # -o ../../../../{output.p3} \
+            # -v bash ../../../../../../benchmarking/MaSuRCA-3.3.7/bin/polca.sh -a asm.fa.PolcaCorrected.fa.PolcaCorrected.fa -r '../../../../{input.in1} ../../../../{input.in2}' -t {threads};
+        # cp asm.fa.PolcaCorrected.fa.PolcaCorrected.fa.PolcaCorrected.fa ../../../../{output.out3};
+
+        # cd .. && rm -rf {wildcards.asm}{wildcards.longpol}-short-polca-wkdir && cd ../../..
+        # """
+
+# rule short_racon:
+# # Racon Version x #
+# #     Does short and long read polishing
+# #     uses minimap2 to do short read to asm alignment first
+# #     requires short reads to be in one file with different names
+    # input:
+        # asm="2-polishing/{techs}/{asm}/{asm}{longpol}.fa",
+        # inc="reads/ILL/ill_combined.fastq.gz"
+    # output:
+        # out1="2-polishing/{techs}/{asm}/{asm}{longpol}-short-racon-1.fa",
+        # out2="2-polishing/{techs}/{asm}/{asm}{longpol}-short-racon-2.fa",
+        # out3="2-polishing/{techs}/{asm}/{asm}{longpol}-short-racon-3.fa",
+        # m1="benchmarks/{techs}/{asm}/{asm}{longpol}-short-racon-m1-timing.txt",
+        # r1="benchmarks/{techs}/{asm}/{asm}{longpol}-short-racon-r1-timing.txt",
+        # m2="benchmarks/{techs}/{asm}/{asm}{longpol}-short-racon-m2-timing.txt",
+        # r2="benchmarks/{techs}/{asm}/{asm}{longpol}-short-racon-r2-timing.txt",
+        # m3="benchmarks/{techs}/{asm}/{asm}{longpol}-short-racon-m3-timing.txt",
+        # r3="benchmarks/{techs}/{asm}/{asm}{longpol}-short-racon-r3-timing.txt"
+    # log:
+        # "logs/{techs}/{asm}/{asm}{longpol}-short-racon.log"
+    # benchmark:
+        # "benchmarks/{techs}/{asm}/{asm}{longpol}-short-racon-total-benchmark.txt"
+    # threads: 20
+    # shell:
+        # """
+        # module load minimap2/2.16
+        # mkdir -p 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-racon-wkdir
+        # cp {input.asm} 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-racon-wkdir/asm.fa;
+        # cd 2-polishing/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}{wildcards.longpol}-short-racon-wkdir
+
+        # /usr/bin/time \
+            # -o ../../../../{output.m1} \
+            # -v minimap2 -x sr asm.fa ../../../../{input.inc} > out1.paf;
+        # /usr/bin/time \
+            # -o ../../../../{output.r1} \
+            # -v racon -u -t {threads} ../../../../{input.inc} out1.paf asm.fa > out1.fa;
+        # cp out1.fa ../../../../{output.out1};
+
+        # /usr/bin/time \
+            # -o ../../../../{output.m2} \
+            # -v minimap2 -x sr out1.fa ../../../../{input.inc} > out2.paf;
+        # /usr/bin/time \
+            # -o ../../../../{output.r2} \
+            # -v racon -u -t {threads} ../../../../{input.inc} out2.paf out1.fa > out2.fa;
+        # cp out2.fa ../../../../{output.out2};
+
+        # /usr/bin/time \
+            # -o ../../../../{output.m3} \
+            # -v minimap2 -x sr out2.fa ../../../../{input.inc} > out3.paf;
+        # /usr/bin/time \
+            # -o ../../../../{output.r3} \
+            # -v racon -u -t {threads} ../../../../{input.inc} out3.paf out2.fa > out3.fa;
+        # cp out3.fa ../../../../{output.out3};
+
+        # cd .. && rm -rf {wildcards.asm}{wildcards.longpol}-short-racon-wkdir && cd ../../..
+        # """
+

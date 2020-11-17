@@ -1,0 +1,61 @@
+###########
+## Reads ##
+###########
+
+# path to Illumina library or libraries, relative to main directory (or absolute), if using. Comma-separated list in pairs.
+ill-pe-reads:       'reads/ILL/ill-pre_1.fastq.gz, reads/ILL/ill-pre_2.fastq.gz'
+# coverage of Illumina reads, if known. If not, pyro will calculate it, will just add to run time.
+ill-cov:            30
+
+# path to Nanopore library, relative to main directory (or absolute), if using. Comma-separated list.
+nano-reads:         'reads/NANO/nano-pre.fastq.gz'
+# coverage of Nanopore reads, if known. If not, put 0 and pyro will calculate it, will just add to run time.
+nano-cov:           30
+
+# path to PacBio CLR library or libraries, relative to main directory (or absolute), if using. Comma-separated list.
+pb-reads:           'reads/PACBIO/pacbio-pre.fastq.gz'
+# coverage of PacBio CLR reads, if known. If not, put 0 and pyro will calculate it, will just add to run time.
+pb-cov:             30
+
+##############
+## Organism ##
+##############
+
+# estimated genome size of organism. If not known, put 0 and pyro will calculate it, will just add to run time.
+genomesize:         100000000
+
+# path to gene set for use with BUSCO, relative to main directory (or absolute), if using.
+odb-set:            'nematoda_odb9'
+
+##############
+## Hardware ##
+##############
+
+# number of threads to use
+threads:            20
+
+# default amount of memory to provide to assembly packages
+mem:                100
+
+################
+## Assemblers ##
+################
+
+# If you have a preference on what assembler(s) should be used, here's a good place to specify them, along with what you want to put in them. Possible options:
+#   abyss-ill, masurca-ill, meraculous-ill, platanus-ill, ray-ill, soap-ill, spades-ill, sparse-dbg2olc-ill, w2rap-ill
+#   canu-nano, canu-fast-nano, flye-nano, miniasm-nano, necat-nano, raven-nano, shasta-nano, wtdbg2-nano
+#   canu-pacbio, falcon-pacbio, flye-pacbio, mecat-pacbio, miniasm-pacbio, raven-pacbio, wtdbg2-pacbio
+#   haslr-nano-hyb, dbg2olc-pacbio-hyb, haslr-pacbio-hyb, masurca-hyb, masurca-flye-hyb, spades-hyb
+
+asm-set:            'flye-nano, wtdbg2-nano, shasta-nano'
+
+###############
+## Polishers ##
+###############
+
+# If you have a preference on what polisher(s) should be used, here's a good place to specify them, along with what you want to put in them/what mode. Possible options:
+#   long-arrow-pacbio, long-medaka-nano, long-nextpolish-nano, long-nextpolish-pacbio, long-racon-nano, long-racon-pacbio
+#   short-gatk, short-hypo, short-nextpolish, short-ntedit, short-pilon, short-polca, short-racon
+#   hyb-hypo-nano, hyb-hypo-pacbio
+
+pol-set:            'long-nextpolish-nano, long-racon-nano, short-hypo, short-nextpolish, short-polca, hyb-hypo-nano'

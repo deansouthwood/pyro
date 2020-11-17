@@ -1,0 +1,227 @@
+#####################################################
+# ASSEMBLY FROM ILLUMINA, NANOPORE AND PACBIO READS #
+#####################################################
+
+### Requires data cleaning first
+### Should have:
+###   - reads/ILL/ill_1.fastq.gz
+###   - reads/ILL/ill_2.fastq.gz
+###   - reads/NANO/nano.fastq.gz
+###   - reads/PACBIO/pacbio.fastq.gz
+
+# Illumina + Nanopore Assemblers
+
+rule haslr_nano_hyb:
+# HASLR Version 0.8a1 #
+#     Requires genome size, very light in requirements. Fast.
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        scf="1-assembly/HYB/haslr-nano-hyb/haslr-nano-hyb-scaffold.fa",
+        stats="3-metrics/assembly-stats/HYB/haslr-nano-hyb/haslr-nano-hyb-scaffold.txt"
+    log:
+        "logs/HYB/haslr-nano-hyb/haslr-nano-hyb.log"
+    benchmark:
+        "benchmarks/HYB/haslr-nano-hyb/haslr-nano-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        haslr.py -t {threads} -o 1-assembly/HYB/haslr-nano-hyb -g {config[genomesize]} -l {input.nano} -x nanopore -s {input.i1} {input.i2};
+
+        cp 1-assembly/HYB/haslr-nano-hyb/asm_contig*/asm.final.fa {output.scf};
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+# Illumina + PacBio Assemblers
+
+rule dbg2olc_pacbio_hyb:
+# DBG2OLC Version 20160205 #
+#     Uses input from a short-read assembler first - recommended is SparseAssembler
+#     needs to be scaffolded with Sparc after running
+#     relies on scripts/split_reads_by_backbone.py and scripts/split_and_run_sparc.sh
+#     runs on fasta not fastq, unsure if works on fasta.gz
+#     GS = genome size
+#     only runs single threaded
+    input:
+        in1="reads/ILL/ill_1.fastq",
+        in2="reads/ILL/ill_2.fastq",
+        pb="reads/PACBIO/pacbio.fastq.gz"
+    output:
+        scf="1-assembly/HYB/dbg2olc-pacbio-hyb/dbg2olc-pacbio-hyb-scaffold.fa",
+        stats="3-metrics/assembly-stats/HYB/dbg2olc-pacbio-hyb/dbg2olc-pacbio-hyb-scaffold.txt",
+        fa=temp("1-assembly/HYB/dbg2olc-pacbio-hyb/pacbio.fasta")
+    log:
+        "logs/HYB/dbg2olc-pacbio-hyb/dbg2olc-pacbio-hyb.log"
+    benchmark:
+        "benchmarks/HYB/dbg2olc-pacbio-hyb/dbg2olc-pacbio-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        gunzip -k -c {input.pb} | sed -n -e '1~4s/^@/>/p;2~4p' > {output.fa};
+        cd 1-assembly/HYB/dbg2olc-pacbio-hyb/
+ 
+        SparseAssembler g 10 k 51 LD 0 GS {config[genomesize]} f ../../../{input.in1} f ../../../{input.in2};
+
+        DBG2OLC Contigs Contigs.txt k 17 KmerCovTh 2 MinOverlap 50 AdaptiveTh 0.01 RemoveChimera 1 f ../../../{output.fa};
+
+        cat Contigs.txt pacbio.fasta > ctg_pb.fasta;
+        mkdir -p consensus-dir
+
+        python ../../../scripts/split_reads_by_backbone.py -b backbone_raw.fasta -o consensus-dir -r ctg_pb.fasta -c DBG2OLC_Consensus_info.txt;
+        bash ../../../scripts/split_and_run_sparc.sh  backbone_raw.fasta DBG2OLC_Consensus_info.txt ctg_pb.fasta consensus-dir 2 > cns_log.txt;
+
+        cp consensus-dir/final_assembly.fasta ../../../{output.scf};
+        rm -rf consensus-dir && cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule haslr_pacbio_hyb:
+# HASLR Version 0.8a1 #
+#     Requires genome size, very light in requirements. Fast.
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz",
+        pb="reads/PACBIO/pacbio.fastq.gz"
+    output:
+        scf="1-assembly/HYB/haslr-pacbio-hyb/haslr-pacbio-hyb-scaffold.fa",
+        stats="3-metrics/assembly-stats/HYB/haslr-pacbio-hyb/haslr-pacbio-hyb-scaffold.txt"
+    log:
+        "logs/HYB/haslr-pacbio-hyb/haslr-pacbio-hyb.log"
+    benchmark:
+        "benchmarks/HYB/haslr-pacbio-hyb/haslr-pacbio-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        haslr.py -t {threads} -o 1-assembly/HYB/haslr-pacbio-hyb -g {config[genomesize]} -l {input.pb} -x pacbio -s {input.i1} {input.i2};
+
+        cp 1-assembly/HYB/haslr-pacbio-hyb/asm_contig*/asm.final.fa {output.scf};
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+# Illumina + Nanopore + PacBio Assemblers
+
+rule masurca_hyb:
+# MaSuRCA Version 3.3.5 #
+#     Prepares input script for MaSuRCA and runs
+#     Requires config file template
+#     Requires combined nanopore and pacbio file, input as nanopore
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        pb="reads/PACBIO/pacbio.fastq.gz",
+        conf="config/default-masurca-config.txt"
+    params:
+        jfsize=int(list({config["genomesize"]})[0])*20
+    output:
+        scf="1-assembly/HYB/masurca-hyb/masurca-hyb-scaffold.fa",
+        stats="3-metrics/assembly-stats/HYB/masurca-hyb/masurca-hyb-scaffold.txt",
+        long="1-assembly/HYB/masurca-hyb/long.fastq.gz"
+    log:
+        "logs/HYB/masurca-hyb/masurca-hyb.log"
+    benchmark:
+        "benchmarks/HYB/masurca-hyb/masurca-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/HYB/masurca-hyb/
+        cp ../../../{input.conf} config.txt;
+
+        unpigz -k -c ../../../{input.nano} > nano.fastq && unpigz -k -c ../../../{input.pb} > pacbio.fastq;
+        cat nano.fastq pacbio.fastq | pigz -c - > ../../../{output.long};
+
+        sed -i 's|INPUTREAD1|../../../{input.i1}|' config.txt;
+        sed -i 's|INPUTREAD2|../../../{input.i2}|' config.txt;
+        sed -i 's|#NANOPORE=INPUTREADLONG|NANOPORE=../../../{output.long}|' config.txt;
+        sed -i 's|USE_LINKING_MATES=1|USE_LINKING_MATES=0|' config.txt;
+        sed -i 's|JELLYFISHSIZE|{params.jfsize}|' config.txt;
+
+        masurca config.txt;
+
+        bash assemble.sh;
+
+        cp CA*/final.genome.scf.fasta ../../../{output.scf};
+        cd ../../../
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule masurca_flye_hyb:
+# MaSuRCA Version 3.3.5 and Flye v 2.5 #
+#     Requires config file template
+#     Generates script and runs
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        pb="reads/PACBIO/pacbio.fastq.gz",
+        conf="config/default-masurca-config.txt"
+    params:
+        jfsize=int(list({config["genomesize"]})[0])*20
+    output:
+        scf="1-assembly/HYB/masurca-flye-hyb/masurca-flye-hyb-scaffold.fa",
+        stats="3-metrics/assembly-stats/HYB/masurca-flye-hyb/masurca-flye-hyb-scaffold.txt",
+        long="1-assembly/HYB/masurca-flye-hyb/long.fastq.gz"
+    log:
+        "logs/HYB/masurca-flye-hyb/masurca-flye-hyb.log"
+    benchmark:
+        "benchmarks/HYB/masurca-flye-hyb/masurca-flye-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/HYB/masurca-flye-hyb/
+        cp ../../../{input.conf} config.txt
+
+        unpigz -k -c ../../../{input.nano} > nano.fastq && unpigz -k -c ../../../{input.pb} > pacbio.fastq;
+        cat nano.fastq pacbio.fastq | pigz -c - > ../../../{output.long};
+
+        sed -i 's|INPUTREAD1|../../../{input.i1}|' config.txt;
+        sed -i 's|INPUTREAD2|../../../{input.i2}|' config.txt;
+        sed -i 's|#NANOPORE=INPUTREADLONG|NANOPORE=../../../{output.long}|' config.txt;
+        sed -i 's|USE_LINKING_MATES=1|USE_LINKING_MATES=0|' config.txt;
+        sed -i 's|JELLYFISHSIZE|{params.jfsize}|' config.txt;
+        sed -i 's|FLYE_ASSEMBLY=0|FLYE_ASSEMBLY=1|' config.txt;
+
+        masurca config.txt;
+
+        bash assemble.sh;
+
+        cp flye/assembly.fasta ../../../{output.scf};
+        cd ../../../
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule spades_hyb:
+# SPAdes Version 3.12.0 - contigs and scaffolds #
+#     Accepts gzipped input
+#     m = memory 
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        pb="reads/PACBIO/pacbio.fastq.gz"
+    output:
+        scf="1-assembly/HYB/spades-hyb/spades-hyb-scaffold.fa",
+        ctg="1-assembly/HYB/spades-hyb/spades-hyb-contig.fa",
+        stats="3-metrics/assembly-stats/HYB/spades-hyb/spades-hyb-scaffold.txt"
+    log:
+        "logs/HYB/spades-hyb/spades-hyb.log"
+    benchmark:
+        "benchmarks/HYB/spades-hyb/spades-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        spades.py -1 {input.i1} -2 {input.i2} --nanopore {input.nano} --pacbio {input.pb} -t {threads} -m {config[mem]} -o 1-assembly/HYB/spades-hyb/;
+
+        mv 1-assembly/HYB/spades-hyb/scaffolds.fasta {output.scf}
+        mv 1-assembly/HYB/spades-hyb/contigs.fasta {output.ctg}
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+

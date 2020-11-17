@@ -1,0 +1,2077 @@
+###########
+# METRICS #
+###########
+
+### Requires data cleaning, assembly and polishing first
+
+localrules: dnaqet_model
+
+
+###############
+# Genome Size #
+###############
+
+rule estimate_read_length:
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz"
+    output:
+        lenest="3-metrics/size/reads-avg-len-ill.txt"
+    threads: 1
+    shell:
+        """
+        mkdir -p 3-metrics/size
+        bash scripts/get-avg-size.sh {input.i1} {input.i2} > {output.lenest}
+        """
+        
+
+rule estimate_genome_size_ill:
+    input:
+        i1="reads/ILL/ill_1.fastq",
+        i2="reads/ILL/ill_2.fastq",
+        lenest="3-metrics/size/reads-avg-len-ill.txt"
+    output:
+        histo="3-metrics/size/reads-ill.histo",
+        gs="3-metrics/size/genomescope-ill.txt",
+        est="3-metrics/size/estimated-size-ill.txt",
+        jf=temp("3-metrics/size/reads-ill.jf")
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/size/gs-output && cd 3-metrics/size
+
+        readlen=$( cat {../../input.lenest} )
+
+        jellyfish count -C -m 21 -s 10G -t {threads} -F 2 -o ../../{output.jf} <(cat ../../{input.i1}) <(cat ../../{input.i2});
+        jellyfish histo -t {threads} ../../{output.jf} > ../../{output.histo}
+
+        Rscript ../../../../benchmarking/genomescope/genomescope.R ../../{output.histo} 21 $readlen gs-output 1000 > ../../{output.gs}
+
+        python ../../scripts/get-genome-size.py ../../{output.gs} > ../../{output.est}
+        """
+        
+
+
+##########
+# dnAQET #
+##########
+
+rule dnaqet_model:
+    input:
+        ref="reference/ref.fa"
+    output:
+        "reference/dnaqet-model/model.bin"
+    threads: 20
+    shell:
+        "java -jar ../../benchmarking/dnAQET/dnAQET.jar model -r {input.ref} -t {threads} -d reference/dnaqet-model/"
+
+rule dnaqet_evaluate_asm:
+    input:
+        ref="reference/ref.fa",
+        model="reference/dnaqet-model/model.bin",
+        asm="1-assembly/{techs}/{asm}/{asm}-scaffold.fa"
+    output:
+        stat="3-metrics/dnaqet/{techs}/{asm}/{asm}-scaffold/reports/assembly.stat"
+    log:
+        "logs/{techs}/dnaqet/{asm}/{asm}-scaffold-dnaqet.log"
+    benchmark:
+        "benchmarks/{techs}/dnaqet/{asm}/{asm}-scaffold-dnaqet-benchmark.txt"
+    threads: 5
+    shell:
+        """
+        java -jar ../../benchmarking/dnAQET/dnAQET.jar evaluate \
+            -f {input.asm} -r {input.ref} \
+            -d 3-metrics/dnaqet/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-scaffold/ \
+            -t {threads} -k {input.model};
+        """
+
+rule dnaqet_evaluate_pol_i:
+    input:
+        ref="reference/ref.fa",
+        model="reference/dnaqet-model/model.bin",
+        asm1="2-polishing/{techs}/{asm}/{asm}-{sround}-1.fa",
+        asm2="2-polishing/{techs}/{asm}/{asm}-{sround}-2.fa",
+        asm3="2-polishing/{techs}/{asm}/{asm}-{sround}-3.fa"
+    output:
+        stat1="3-metrics/dnaqet/{techs}/{asm}/{asm}-{sround}-1/reports/assembly.stat",
+        stat2="3-metrics/dnaqet/{techs}/{asm}/{asm}-{sround}-2/reports/assembly.stat",
+        stat3="3-metrics/dnaqet/{techs}/{asm}/{asm}-{sround}-3/reports/assembly.stat"
+    log:
+        "logs/{techs}/dnaqet/{asm}/{asm}-{sround}-dnaqet.log"
+    benchmark:
+        "benchmarks/{techs}/dnaqet/{asm}/{asm}-{sround}-dnaqet-benchmark.txt"
+    threads: 5
+    shell:
+        """
+        java -jar ../../benchmarking/dnAQET/dnAQET.jar evaluate \
+            -f {input.asm1} -r {input.ref} \
+            -d 3-metrics/dnaqet/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.sround}-1/ \
+            -t {threads} -k {input.model};
+
+        java -jar ../../benchmarking/dnAQET/dnAQET.jar evaluate \
+            -f {input.asm2} -r {input.ref} \
+            -d 3-metrics/dnaqet/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.sround}-2/ \
+            -t {threads} -k {input.model};
+
+        java -jar ../../benchmarking/dnAQET/dnAQET.jar evaluate \
+            -f {input.asm3} -r {input.ref} \
+            -d 3-metrics/dnaqet/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.sround}-3/ \
+            -t {threads} -k {input.model};
+        """
+
+rule dnaqet_evaluate_pol_j:
+    input:
+        ref="reference/ref.fa",
+        model="reference/dnaqet-model/model.bin",
+        asm1="2-polishing/{techs}/{asm}/{asm}-{lround}-1.fa",
+        asm2="2-polishing/{techs}/{asm}/{asm}-{lround}-2.fa",
+        asm3="2-polishing/{techs}/{asm}/{asm}-{lround}-3.fa",
+        asm4="2-polishing/{techs}/{asm}/{asm}-{lround}-4.fa"
+    output:
+        stat1="3-metrics/dnaqet/{techs}/{asm}/{asm}-{lround}-1/reports/assembly.stat",
+        stat2="3-metrics/dnaqet/{techs}/{asm}/{asm}-{lround}-2/reports/assembly.stat",
+        stat3="3-metrics/dnaqet/{techs}/{asm}/{asm}-{lround}-3/reports/assembly.stat",
+        stat4="3-metrics/dnaqet/{techs}/{asm}/{asm}-{lround}-4/reports/assembly.stat"
+    log:
+        "logs/{techs}/dnaqet/{asm}/{asm}-{lround}-dnaqet.log"
+    benchmark:
+        "benchmarks/{techs}/dnaqet/{asm}/{asm}-{lround}-dnaqet-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        java -jar ../../benchmarking/dnAQET/dnAQET.jar evaluate \
+            -f {input.asm1} -r {input.ref} \
+            -d 3-metrics/dnaqet/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.lround}-1/ \
+            -t {threads} -k {input.model};
+
+        java -jar ../../benchmarking/dnAQET/dnAQET.jar evaluate \
+            -f {input.asm2} -r {input.ref} \
+            -d 3-metrics/dnaqet/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.lround}-2/ \
+            -t {threads} -k {input.model};
+
+        java -jar ../../benchmarking/dnAQET/dnAQET.jar evaluate \
+            -f {input.asm3} -r {input.ref} \
+            -d 3-metrics/dnaqet/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.lround}-3/ \
+            -t {threads} -k {input.model};
+
+        java -jar ../../benchmarking/dnAQET/dnAQET.jar evaluate \
+            -f {input.asm4} -r {input.ref} \
+            -d 3-metrics/dnaqet/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.lround}-4/ \
+            -t {threads} -k {input.model};
+        """
+
+#########
+# Quast #
+#########
+
+### Assembly Comparisons
+
+# Illumina
+
+rule quast_ill_asm:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("1-assembly/ILL/{ill}/{ill}-scaffold.fa", ill = ILL_ASM)
+    params:
+        propname=",".join(ILL_ASM_PROP)
+    output:
+        rep="3-metrics/quast/ILL/ill-asm-comparison/report.tsv"
+    log:
+        "logs/ILL/quast/ill-asm-comparison.log"
+    benchmark:
+        "benchmarks/ILL/quast/quast-ill-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/ILL/ill-asm-comparison 
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/ILL/ill-asm-comparison \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} {input.asms};
+        """
+
+# Nanopore
+
+rule quast_nano_asm:
+    input:
+        nano="reads/NANO/nano.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("1-assembly/NANO/{nano}/{nano}-scaffold.fa", nano = NANO_ASM)
+    params:
+        propname=",".join(NANO_ASM_PROP)
+    output:
+        rep="3-metrics/quast/NANO/nano-asm-comparison/report.tsv"
+    log:
+        "logs/NANO/quast/nano-asm-comparison.log"
+    benchmark:
+        "benchmarks/NANO/quast/quast-nano-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/NANO/nano-asm-comparison
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/NANO/nano-asm-comparison \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            --nanopore {input.nano} {input.asms};
+        """
+
+# PacBio
+
+rule quast_pacbio_asm:
+    input:
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("1-assembly/PACBIO/{pacbio}/{pacbio}-scaffold.fa", pacbio = PACBIO_ASM)
+    params:
+        propname=",".join(PACBIO_ASM_PROP)
+    output:
+        rep="3-metrics/quast/PACBIO/pacbio-asm-comparison/report.tsv"
+    log:
+        "logs/PACBIO/quast/pacbio-asm-comparison.log"
+    benchmark:
+        "benchmarks/PACBIO/quast/quast-pacbio-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/PACBIO/pacbio-asm-comparison
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/PACBIO/pacbio-asm-comparison \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            --pacbio {input.pacbio} {input.asms};
+        """
+
+# Hybrid
+
+rule quast_nano_hyb_asm:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("1-assembly/HYB/{hyb}/{hyb}-scaffold.fa", hyb = NANO_HYB_ASM)
+    params:
+        propname=",".join(NANO_HYB_ASM_PROP)
+    output:
+        rep="3-metrics/quast/HYB/nano-hyb-asm-comparison/report.tsv"
+    log:
+        "logs/HYB/quast/nano-hyb-asm-comparison.log"
+    benchmark:
+        "benchmarks/HYB/quast/quast-nano-hyb-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/nano-hyb-asm-comparison
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/nano-hyb-asm-comparison \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} {input.asms};
+        """
+
+rule quast_pacbio_hyb_asm:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("1-assembly/HYB/{hyb}/{hyb}-scaffold.fa", hyb = PACBIO_HYB_ASM)
+    params:
+        propname=",".join(PACBIO_HYB_ASM_PROP)
+    output:
+        rep="3-metrics/quast/HYB/pacbio-hyb-asm-comparison/report.tsv"
+    log:
+        "logs/HYB/quast/pacbio-hyb-asm-comparison.log"
+    benchmark:
+        "benchmarks/HYB/quast/quast-pacbio-hyb-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/pacbio-hyb-asm-comparison
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/pacbio-hyb-asm-comparison \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --pacbio {input.pacbio} {input.asms};
+        """
+
+rule quast_hyb_hyb_asm:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("1-assembly/HYB/{hyb}/{hyb}-scaffold.fa", hyb = HYB_ASM)
+    params:
+        propname=",".join(HYB_ASM_PROP)
+    output:
+        rep="3-metrics/quast/HYB/hyb-hyb-asm-comparison/report.tsv"
+    log:
+        "logs/HYB/quast/hyb-hyb-asm-comparison.log"
+    benchmark:
+        "benchmarks/HYB/quast/quast-hyb-hyb-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/hyb-hyb-asm-comparison
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/hyb-hyb-asm-comparison \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} --pacbio {input.pacbio} {input.asms};
+        """
+
+### Polishing Comparisons
+
+# Illumina
+
+rule quast_ill_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("2-polishing/ILL/{{asm}}/{{asm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{pol}-{i}", pol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/ILL/{asm}/{asm}-scaffold-short/report.tsv"
+    log:
+        "logs/ILL/quast/{asm}/{asm}-short-quast.log"
+    benchmark:
+        "benchmarks/ILL/quast/{asm}/{asm}-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/ILL/{wildcards.asm}/{wildcards.asm}-scaffold-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/ILL/{wildcards.asm}/{wildcards.asm}-scaffold-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} {input.asms};
+        """
+
+# Nanopore
+
+rule quast_nano_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("2-polishing/NANO/{{asm}}/{{asm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{pol}-{i}", pol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/NANO/{asm}/{asm}-scaffold-short/report.tsv"
+    log:
+        "logs/NANO/quast/{asm}/{asm}-short-quast.log"
+    benchmark:
+        "benchmarks/NANO/quast/{asm}/{asm}-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} {input.asms};
+        """
+
+rule quast_nano_long:
+    input:
+        nano="reads/NANO/nano.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("2-polishing/NANO/{{asm}}/{{asm}}-scaffold-{lpol}-{j}.fa", lpol = NANO_POL, j = ["1","2","3","4"])
+    params:
+        propname=",".join(expand("{lpol}-{j}", lpol = NANO_POL_PROP, j = ["1","2","3","4"]))
+    output:
+        rep="3-metrics/quast/NANO/{asm}/{asm}-scaffold-long/report.tsv"
+    log:
+        "logs/NANO/quast/{asm}/{asm}-long-quast.log"
+    benchmark:
+        "benchmarks/NANO/quast/{asm}/{asm}-long-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            --nanopore {input.nano} {input.asms};
+        """
+
+rule quast_nano_long_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("2-polishing/NANO/{{asm}}/{{asm}}-scaffold-{lpol}-4-{spol}-{i}.fa", lpol = NANO_POL, spol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{lpol}-4-{spol}-{i}", lpol = NANO_POL_PROP, spol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/NANO/{asm}/{asm}-scaffold-long-short/report.tsv"
+    log:
+        "logs/NANO/quast/{asm}/{asm}-long-short-quast.log"
+    benchmark:
+        "benchmarks/NANO/quast/{asm}/{asm}-long-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} {input.asms};
+        """
+
+rule quast_nano_hyb:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("2-polishing/NANO/{{asm}}/{{asm}}-scaffold-{hpol}-{j}.fa", hpol = NANO_HYB_POL, j = ["1","2","3","4"])
+    params:
+        propname=",".join(expand("{hpol}-{j}", hpol = NANO_HYB_POL_PROP, j = ["1","2","3","4"]))
+    output:
+        rep="3-metrics/quast/NANO/{asm}/{asm}-scaffold-hyb/report.tsv"
+    log:
+        "logs/NANO/quast/{asm}/{asm}-hyb-quast.log"
+    benchmark:
+        "benchmarks/NANO/quast/{asm}/{asm}-hyb-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} {input.asms};
+        """
+
+# PacBio
+
+rule quast_pacbio_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("2-polishing/PACBIO/{{asm}}/{{asm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{pol}-{i}", pol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/PACBIO/{asm}/{asm}-scaffold-short/report.tsv"
+    log:
+        "logs/PACBIO/quast/{asm}/{asm}-short-quast.log"
+    benchmark:
+        "benchmarks/PACBIO/quast/{asm}/{asm}-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --pacbio {input.pacbio} {input.asms};
+        """
+
+rule quast_pacbio_long:
+    input:
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("2-polishing/PACBIO/{{asm}}/{{asm}}-scaffold-{lpol}-{j}.fa", lpol = PACBIO_POL, j = ["1","2","3","4"])
+    params:
+        propname=",".join(expand("{lpol}-{j}", lpol = PACBIO_POL_PROP, j = ["1","2","3","4"]))
+    output:
+        rep="3-metrics/quast/PACBIO/{asm}/{asm}-scaffold-long/report.tsv"
+    log:
+        "logs/PACBIO/quast/{asm}/{asm}-long-quast.log"
+    benchmark:
+        "benchmarks/PACBIO/quast/{asm}/{asm}-long-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            --pacbio {input.pacbio} {input.asms};
+        """
+
+rule quast_pacbio_long_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("2-polishing/PACBIO/{{asm}}/{{asm}}-scaffold-{lpol}-4-{spol}-{i}.fa", lpol = PACBIO_POL, spol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{lpol}-4-{spol}-{i}", lpol = PACBIO_POL_PROP, spol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/PACBIO/{asm}/{asm}-scaffold-long-short/report.tsv"
+    log:
+        "logs/PACBIO/quast/{asm}/{asm}-long-short-quast.log"
+    benchmark:
+        "benchmarks/PACBIO/quast/{asm}/{asm}-long-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --pacbio {input.pacbio} {input.asms};
+        """
+
+rule quast_pacbio_hyb:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        asms=expand("2-polishing/PACBIO/{{asm}}/{{asm}}-scaffold-{hpol}-{j}.fa", hpol = PACBIO_HYB_POL, j = ["1","2","3","4"])
+    params:
+        propname=",".join(expand("{hpol}-{j}", hpol = PACBIO_HYB_POL_PROP, j = ["1","2","3","4"]))
+    output:
+        rep="3-metrics/quast/PACBIO/{asm}/{asm}-scaffold-hyb/report.tsv"
+    log:
+        "logs/PACBIO/quast/{asm}/{asm}-hyb-quast.log"
+    benchmark:
+        "benchmarks/PACBIO/quast/{asm}/{asm}-hyb-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --pacbio {input.pacbio} {input.asms};
+        """
+
+# Hybrid
+
+# ILL-NANO
+
+rule quast_nano_hyb_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        ref="reference/ref.fa",
+        nhasms=expand("2-polishing/HYB/{{nhasm}}/{{nhasm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{pol}-{i}", pol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/HYB/{nhasm}/{nhasm}-scaffold-short/report.tsv"
+    log:
+        "logs/HYB/quast/{nhasm}/{nhasm}-short-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{nhasm}/{nhasm}-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} {input.nhasms};
+        """
+
+rule quast_nano_hyb_long:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        ref="reference/ref.fa",
+        nhasms=expand("2-polishing/HYB/{{nhasm}}/{{nhasm}}-scaffold-{lpol}-{j}.fa", lpol = NANO_POL, j = ["1","2","3","4"])
+    params:
+        propname=",".join(expand("{lpol}-{j}", lpol = NANO_POL_PROP, j = ["1","2","3","4"]))
+    output:
+        rep="3-metrics/quast/HYB/{nhasm}/{nhasm}-scaffold-long/report.tsv"
+    log:
+        "logs/HYB/quast/{nhasm}/{nhasm}-long-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{nhasm}/{nhasm}-long-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} {input.nhasms};
+        """
+
+rule quast_nano_hyb_long_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        ref="reference/ref.fa",
+        nhasms=expand("2-polishing/HYB/{{nhasm}}/{{nhasm}}-scaffold-{lpol}-4-{spol}-{i}.fa", lpol = NANO_POL, spol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{lpol}-4-{spol}-{i}", lpol = NANO_POL_PROP, spol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/HYB/{nhasm}/{nhasm}-scaffold-long-short/report.tsv"
+    log:
+        "logs/HYB/quast/{nhasm}/{nhasm}-long-short-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{nhasm}/{nhasm}-long-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} {input.nhasms};
+        """
+
+rule quast_nano_hyb_hyb:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        ref="reference/ref.fa",
+        nhasms=expand("2-polishing/HYB/{{nhasm}}/{{nhasm}}-scaffold-{hpol}-{j}.fa", hpol = NANO_HYB_POL, j = ["1","2","3","4"])
+    params:
+        propname=",".join(expand("{hpol}-{j}", hpol = NANO_HYB_POL_PROP, j = ["1","2","3","4"]))
+    output:
+        rep="3-metrics/quast/HYB/{nhasm}/{nhasm}-scaffold-hyb/report.tsv"
+    log:
+        "logs/HYB/quast/{nhasm}/{nhasm}-hyb-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{nhasm}/{nhasm}-hyb-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-hyb
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-hyb \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} {input.nhasms};
+        """
+
+
+# ILL-PACBIO
+
+rule quast_pacbio_hyb_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        phasms=expand("2-polishing/HYB/{{phasm}}/{{phasm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{pol}-{i}", pol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/HYB/{phasm}/{phasm}-scaffold-short/report.tsv"
+    log:
+        "logs/HYB/quast/{phasm}/{phasm}-short-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{phasm}/{phasm}-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --pacbio {input.pacbio} {input.phasms};
+        """
+
+rule quast_pacbio_hyb_long:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        phasms=expand("2-polishing/HYB/{{phasm}}/{{phasm}}-scaffold-{lpol}-{j}.fa", lpol = PACBIO_POL, j = ["1","2","3","4"])
+    params:
+        propname=",".join(expand("{lpol}-{j}", lpol = PACBIO_POL_PROP, j = ["1","2","3","4"]))
+    output:
+        rep="3-metrics/quast/HYB/{phasm}/{phasm}-scaffold-long/report.tsv"
+    log:
+        "logs/HYB/quast/{phasm}/{phasm}-long-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{phasm}/{phasm}-long-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --pacbio {input.pacbio} {input.phasms};
+        """
+
+rule quast_pacbio_hyb_long_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        phasms=expand("2-polishing/HYB/{{phasm}}/{{phasm}}-scaffold-{lpol}-4-{spol}-{i}.fa", lpol = PACBIO_POL, spol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{lpol}-4-{spol}-{i}", lpol = PACBIO_POL_PROP, spol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/HYB/{phasm}/{phasm}-scaffold-long-short/report.tsv"
+    log:
+        "logs/HYB/quast/{phasm}/{phasm}-long-short-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{phasm}/{phasm}-long-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --pacbio {input.pacbio} {input.phasms};
+        """
+
+rule quast_pacbio_hyb_hyb:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        phasms=expand("2-polishing/HYB/{{phasm}}/{{phasm}}-scaffold-{hpol}-{j}.fa", hpol = PACBIO_HYB_POL, j = ["1","2","3","4"])
+    params:
+        propname=",".join(expand("{hpol}-{j}", hpol = PACBIO_HYB_POL_PROP, j = ["1","2","3","4"]))
+    output:
+        rep="3-metrics/quast/HYB/{phasm}/{phasm}-scaffold-hyb/report.tsv"
+    log:
+        "logs/HYB/quast/{phasm}/{phasm}-hyb-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{phasm}/{phasm}-hyb-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-hyb
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-hyb \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --pacbio {input.pacbio} {input.phasms};
+        """
+
+# ILL-NANO-PACBIO
+
+rule quast_hyb_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        hhasms=expand("2-polishing/HYB/{{hhasm}}/{{hhasm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{pol}-{i}", pol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/HYB/{hhasm}/{hhasm}-scaffold-short/report.tsv"
+    log:
+        "logs/HYB/quast/{hhasm}/{hhasm}-short-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{hhasm}/{hhasm}-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} --pacbio {input.pacbio} {input.hhasms};
+        """
+
+rule quast_hyb_long:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        hhasms=expand("2-polishing/HYB/{{hhasm}}/{{hhasm}}-scaffold-{lpol}-{j}.fa", lpol = LONG_HYB_POL, j = ["1","2","3","4"])
+    params:
+        propname=",".join(expand("{lpol}-{j}", lpol = LONG_HYB_POL_PROP, j = ["1","2","3","4"]))
+    output:
+        rep="3-metrics/quast/HYB/{hhasm}/{hhasm}-scaffold-long/report.tsv"
+    log:
+        "logs/HYB/quast/{hhasm}/{hhasm}-long-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{hhasm}/{hhasm}-long-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} --pacbio {input.pacbio} {input.hhasms};
+        """
+
+rule quast_hyb_long_short:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        hhasms=expand("2-polishing/HYB/{{hhasm}}/{{hhasm}}-scaffold-{lpol}-4-{spol}-{i}.fa", lpol = LONG_HYB_POL, spol = ILL_POL, i = ["1","2","3"])
+    params:
+        propname=",".join(expand("{lpol}-4-{spol}-{i}", lpol = LONG_HYB_POL_PROP, spol = ILL_POL_PROP, i = ["1","2","3"]))
+    output:
+        rep="3-metrics/quast/HYB/{hhasm}/{hhasm}-scaffold-long-short/report.tsv"
+    log:
+        "logs/HYB/quast/{hhasm}/{hhasm}-long-short-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{hhasm}/{hhasm}-long-short-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long-short
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long-short \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} --pacbio {input.pacbio} {input.hhasms};
+        """
+
+rule quast_hyb_hyb:
+    input:
+        i1="reads/ILL/ill_quast_1.fastq.gz",
+        i2="reads/ILL/ill_quast_2.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz",
+        pacbio="reads/PACBIO/pacbio.fastq.gz",
+        ref="reference/ref.fa",
+        hhasms=expand("2-polishing/HYB/{{hhasm}}/{{hhasm}}-scaffold-{hpol}-{j}.fa", hpol = HYB_HYB_POL, j = ["1","2","3","4"])
+    params:
+        propname=",".join(expand("{hpol}-{j}", hpol = HYB_HYB_POL_PROP, j = ["1","2","3","4"]))
+    output:
+        rep="3-metrics/quast/HYB/{hhasm}/{hhasm}-scaffold-hyb/report.tsv"
+    log:
+        "logs/HYB/quast/{hhasm}/{hhasm}-hyb-quast.log"
+    benchmark:
+        "benchmarks/HYB/quast/{hhasm}/{hhasm}-hyb-quast-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/quast/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-hyb
+
+        python ../../benchmarking/quast-5.0.2/quast.py \
+            -o 3-metrics/quast/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-hyb \
+            -r {input.ref} \
+            -t {threads}  \
+            -m 200 --extensive-mis-size 7000 --min-contig 3000 --min-alignment 500 \
+            --space-efficient --eukaryote --fast \
+            -l "{params.propname}" \
+            -1 {input.i1} -2 {input.i2} --nanopore {input.nano} --pacbio {input.pacbio} {input.hhasms};
+        """
+
+################
+# RepeatMasker #
+################
+
+rule repeatmasker_asm:
+    input:
+        asm="1-assembly/{techs}/{asm}/{asm}-scaffold.fa"
+    output:
+        table="3-metrics/repeatmasker/{techs}/{asm}/{asm}-scaffold.tbl"
+    log:
+        "logs/{techs}/repeatmasker/{asm}/{asm}-scaffold-repeatmasker.log"
+    benchmark:
+        "benchmarks/{techs}/repeatmasker/{asm}/{asm}-scaffold-repeatmasker-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/repeatmasker/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-scaffold-wkdir
+        cd 3-metrics/repeatmasker/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-scaffold-wkdir
+
+        RepeatMasker \
+            -species {config[rm-species]} \
+            -parallel {threads} -q \
+            -dir ./ ../../../../../{input.asm};
+
+        cp {wildcards.asm}-scaffold.fa.tbl ../../../../../{output.table};
+        cd ../../../../..
+        rm -rf 3-metrics/repeatmasker/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-scaffold-wkdir
+        """
+
+rule repeatmasker_pol_i:
+    input:
+        asm1="2-polishing/{techs}/{asm}/{asm}-{sround}-1.fa",
+        asm2="2-polishing/{techs}/{asm}/{asm}-{sround}-2.fa",
+        asm3="2-polishing/{techs}/{asm}/{asm}-{sround}-3.fa"
+    output:
+        table1="3-metrics/repeatmasker/{techs}/{asm}/{asm}-{sround}-1.tbl",
+        table2="3-metrics/repeatmasker/{techs}/{asm}/{asm}-{sround}-2.tbl",
+        table3="3-metrics/repeatmasker/{techs}/{asm}/{asm}-{sround}-3.tbl"
+    log:
+        "logs/{techs}/repeatmasker/{asm}/{asm}-{sround}-repeatmasker.log"
+    benchmark:
+        "benchmarks/{techs}/repeatmasker/{asm}/{asm}-{sround}-repeatmasker-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module load repeatmasker/4.1.0
+        mkdir -p 3-metrics/repeatmasker/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.sround}-wkdir/{{dir-01,dir-02,dir-03}}
+
+        cd 3-metrics/repeatmasker/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.sround}-wkdir/dir-01/
+        RepeatMasker \
+            -species {config[rm-species]} \
+            -parallel {threads} -q \
+            -dir ./ ../../../../../../{input.asm1};
+        cp {wildcards.asm}-{wildcards.sround}-1.fa.tbl ../../../../../../{output.table1};
+
+        cd ../dir-02/
+        RepeatMasker \
+            -species {config[rm-species]} \
+            -parallel {threads} -q \
+            -dir ./ ../../../../../../{input.asm2};
+        cp {wildcards.asm}-{wildcards.sround}-2.fa.tbl ../../../../../../{output.table2};
+
+        cd ../dir-03/
+        RepeatMasker \
+            -species {config[rm-species]} \
+            -parallel {threads} -q \
+            -dir ./ ../../../../../../{input.asm3};
+        cp {wildcards.asm}-{wildcards.sround}-3.fa.tbl ../../../../../../{output.table3};
+
+        cd ../../../../../..
+        rm -rf 3-metrics/repeatmasker/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.sround}-wkdir
+        """
+
+rule repeatmasker_pol_j:
+    input:
+        asm1="2-polishing/{techs}/{asm}/{asm}-{lround}-1.fa",
+        asm2="2-polishing/{techs}/{asm}/{asm}-{lround}-2.fa",
+        asm3="2-polishing/{techs}/{asm}/{asm}-{lround}-3.fa",
+        asm4="2-polishing/{techs}/{asm}/{asm}-{lround}-4.fa",
+    output:
+        table1="3-metrics/repeatmasker/{techs}/{asm}/{asm}-{lround}-1.tbl",
+        table2="3-metrics/repeatmasker/{techs}/{asm}/{asm}-{lround}-2.tbl",
+        table3="3-metrics/repeatmasker/{techs}/{asm}/{asm}-{lround}-3.tbl",
+        table4="3-metrics/repeatmasker/{techs}/{asm}/{asm}-{lround}-4.tbl"
+    log:
+        "logs/{techs}/repeatmasker/{asm}/{asm}-{lround}-repeatmasker.log"
+    benchmark:
+        "benchmarks/{techs}/repeatmasker/{asm}/{asm}-{lround}-repeatmasker-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module load repeatmasker/4.1.0
+        mkdir -p 3-metrics/repeatmasker/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.lround}-wkdir/{{dir-01,dir-02,dir-03,dir-04}}
+
+        cd 3-metrics/repeatmasker/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.lround}-wkdir/dir-01/
+        RepeatMasker \
+            -species {config[rm-species]} \
+            -parallel {threads} -q \
+            -dir ./ ../../../../../../{input.asm1};
+        cp {wildcards.asm}-{wildcards.lround}-1.fa.tbl ../../../../../../{output.table1};
+
+        cd ../dir-02/
+        RepeatMasker \
+            -species {config[rm-species]} \
+            -parallel {threads} -q \
+            -dir ./ ../../../../../../{input.asm2};
+        cp {wildcards.asm}-{wildcards.lround}-2.fa.tbl ../../../../../../{output.table2};
+
+        cd ../dir-03/
+        RepeatMasker \
+            -species {config[rm-species]} \
+            -parallel {threads} -q \
+            -dir ./ ../../../../../../{input.asm3};
+        cp {wildcards.asm}-{wildcards.lround}-3.fa.tbl ../../../../../../{output.table3};
+
+        cd ../dir-04/
+        RepeatMasker \
+            -species {config[rm-species]} \
+            -parallel {threads} -q \
+            -dir ./ ../../../../../../{input.asm4};
+        cp {wildcards.asm}-{wildcards.lround}-4.fa.tbl ../../../../../../{output.table4};
+
+        cd ../../../../../..
+        rm -rf 3-metrics/repeatmasker/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.lround}-wkdir
+        """
+
+#########
+# Busco #
+#########
+
+rule busco:
+    input:
+        asm="2-polishing/{techs}/{asm}/{asm}-{tag}.fa"
+    output:
+        short="3-metrics/busco/{techs}/{asm}/run_{asm}-{tag}/short_summary_{asm}-{tag}.txt"
+    log:
+        "logs/{techs}/busco/{asm}/{asm}-{tag}-busco.log"
+    benchmark:
+        "benchmarks/{techs}/busco/{asm}/{asm}-{tag}-busco-benchmark.txt"
+    threads: 4
+    shell:
+        """
+        mkdir -p 3-metrics/busco/{wildcards.techs}/{wildcards.asm} && cd 3-metrics/busco/{wildcards.techs}/{wildcards.asm};
+        export BUSCO_CONFIG_FILE="/datasets/work/hb-eval-genome/work/benchmarking/busco/config/config-basic.ini"
+        export AUGUSTUS_CONFIG_PATH="/datasets/work/hb-eval-genome/work/benchmarking/augustus/config/"
+
+        busco -i ../../../../{input.asm} -o {wildcards.asm}-{wildcards.tag} -l /datasets/work/hb-eval-genome/work/benchmarking/busco/lineages/{config[odb-set]}/ -m geno -c {threads};
+
+        rm -rf run_{wildcards.asm}-{wildcards.tag}/augustus_output/ run_{wildcards.asm}-{wildcards.tag}/blast_output/ run_{wildcards.asm}-{wildcards.tag}/hmmer_output/ 
+        cd ../../../..
+        """
+
+rule busco_ref:
+    input:
+        ref="reference/ref.fa"
+    output:
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt"
+    log:
+        "logs/ref/busco/ref-busco.log"
+    benchmark:
+        "benchmarks/ref/busco/ref-busco-benchmark.txt"
+    threads: 4
+    shell:
+        """
+        mkdir -p 3-metrics/busco/ref && cd 3-metrics/busco/ref;
+        export BUSCO_CONFIG_FILE="/datasets/work/hb-eval-genome/work/benchmarking/busco/config/config-basic.ini"
+        export AUGUSTUS_CONFIG_PATH="/datasets/work/hb-eval-genome/work/benchmarking/augustus/config/"
+
+        busco -i ../../../{input.ref} -o ref -l /datasets/work/hb-eval-genome/work/benchmarking/busco/lineages/{config[odb-set]}/ -m geno -c {threads};
+
+        rm -rf run_ref/augustus_output/ run_ref/blast_output/ run_ref/hmmer_output/ 
+        cd ../../../..
+        """
+
+#######
+# Red #
+#######
+
+rule red:
+    input:
+        asm="2-polishing/{techs}/{asm}/{asm}-{tag}.fa"
+    output:
+        txt="3-metrics/red/{techs}/{asm}/{asm}-{tag}/{asm}-{tag}.txt"
+    log:
+        "logs/{techs}/red/{asm}/{asm}-{tag}-red.log"
+    benchmark:
+        "benchmarks/{techs}/red/{asm}/{asm}-{tag}-red-benchmark.txt"
+    threads: 5
+    shell:
+        """
+        mkdir -p 3-metrics/red/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.tag}/{wildcards.asm}-{wildcards.tag}-Red/
+        cd 3-metrics/red/{wildcards.techs}/{wildcards.asm}/{wildcards.asm}-{wildcards.tag}
+        cp ../../../../../{input.asm} asm.fa
+
+        Red -gnm ./ -msk ./{wildcards.asm}-{wildcards.tag}-Red -cor {threads} 1> {wildcards.asm}-{wildcards.tag}.txt;
+
+        rm -rf asm.fa
+
+        cd ../../../../..
+        """
+
+
+###########
+# Buscomp #
+###########
+
+# Assemblies
+
+rule buscomp_ill_asm:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/ILL/{ill}/{ill}-scaffold.fa", ill = ILL_ASM),
+        shortasms=expand("3-metrics/busco/ILL/{ill}/run_{ill}-scaffold/short_summary_{ill}-scaffold.txt", ill = ILL_ASM)
+    output:
+        ratings="3-metrics/buscomp/ILL/ill-asm-comparison/buscomp-ratings.tdt"
+    log:
+        "logs/ILL/buscomp/ill-asm-comparison.log"
+    benchmark:
+        "benchmarks/ILL/buscomp/buscomp-ill-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/buscomp/ILL/ill-asm-comparison/fasta
+        cp {input.asms} 3-metrics/buscomp/ILL/ill-asm-comparison/fasta
+        cp {input.ref} 3-metrics/buscomp/ILL/ill-asm-comparison/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../busco/ILL/*/run_*-scaffold,../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile=ill-asm-comparison\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/ILL/ill-asm-comparison/input.ini
+        cd 3-metrics/buscomp/ILL/ill-asm-comparison
+
+        buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../..
+        """
+
+
+rule buscomp_nano_asm:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/NANO/{nano}/{nano}-scaffold.fa", nano = NANO_ASM),
+        shortasms=expand("3-metrics/busco/NANO/{nano}/run_{nano}-scaffold/short_summary_{nano}-scaffold.txt", nano = NANO_ASM)
+    output:
+        ratings="3-metrics/buscomp/NANO/nano-asm-comparison/buscomp-ratings.tdt"
+    log:
+        "logs/NANO/buscomp/nano-asm-comparison.log"
+    benchmark:
+        "benchmarks/NANO/buscomp/buscomp-nano-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/buscomp/NANO/nano-asm-comparison/fasta
+        cp {input.asms} 3-metrics/buscomp/NANO/nano-asm-comparison/fasta
+        cp {input.ref} 3-metrics/buscomp/NANO/nano-asm-comparison/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../busco/NANO/*/run_*-scaffold,../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile=nano-asm-comparison\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/NANO/nano-asm-comparison/input.ini
+        cd 3-metrics/buscomp/NANO/nano-asm-comparison
+
+        python ../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../..
+        """
+
+
+rule buscomp_pacbio_asm:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/PACBIO/{pacbio}/{pacbio}-scaffold.fa", pacbio = PACBIO_ASM),
+        shortasms=expand("3-metrics/busco/PACBIO/{pacbio}/run_{pacbio}-scaffold/short_summary_{pacbio}-scaffold.txt", pacbio = PACBIO_ASM)
+    output:
+        ratings="3-metrics/buscomp/PACBIO/pacbio-asm-comparison/buscomp-ratings.tdt"
+    log:
+        "logs/PACBIO/buscomp/pacbio-asm-comparison.log"
+    benchmark:
+        "benchmarks/PACBIO/buscomp/buscomp-pacbio-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mkdir -p 3-metrics/buscomp/PACBIO/pacbio-asm-comparison/fasta
+        cp {input.asms} 3-metrics/buscomp/PACBIO/pacbio-asm-comparison/fasta
+        cp {input.ref} 3-metrics/buscomp/PACBIO/pacbio-asm-comparison/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../busco/PACBIO/*/run_*-scaffold,../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile=pacbio-asm-comparison\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/PACBIO/pacbio-asm-comparison/input.ini
+        cd 3-metrics/buscomp/PACBIO/pacbio-asm-comparison
+
+        python ../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../..
+        """
+
+
+rule buscomp_nano_hyb_asm:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{nhyb}/{nhyb}-scaffold.fa", nhyb = NANO_HYB_ASM),
+        shortasms=expand("3-metrics/busco/HYB/{nhyb}/run_{nhyb}-scaffold/short_summary_{nhyb}-scaffold.txt", nhyb = NANO_HYB_ASM)
+    output:
+        ratings="3-metrics/buscomp/HYB/nano-hyb-asm-comparison/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/nano-hyb-asm-comparison.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/buscomp-nano-hyb-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/nano-hyb-asm-comparison/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/nano-hyb-asm-comparison/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/nano-hyb-asm-comparison/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../busco/HYB/*/run_*-scaffold,../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile=nano-hyb-asm-comparison\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/nano-hyb-asm-comparison/input.ini
+        cd 3-metrics/buscomp/HYB/nano-hyb-asm-comparison
+
+        python ../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../..
+        """
+
+
+rule buscomp_pacbio_hyb_asm:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{phyb}/{phyb}-scaffold.fa", phyb = PACBIO_HYB_ASM),
+        shortasms=expand("3-metrics/busco/HYB/{phyb}/run_{phyb}-scaffold/short_summary_{phyb}-scaffold.txt", phyb = PACBIO_HYB_ASM)
+    output:
+        ratings="3-metrics/buscomp/HYB/pacbio-hyb-asm-comparison/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/pacbio-hyb-asm-comparison.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/buscomp-pacbio-hyb-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/pacbio-hyb-asm-comparison/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/pacbio-hyb-asm-comparison/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/pacbio-hyb-asm-comparison/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../busco/HYB/*/run_*-scaffold,../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile=pacbio-hyb-asm-comparison\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/pacbio-hyb-asm-comparison/input.ini
+        cd 3-metrics/buscomp/HYB/pacbio-hyb-asm-comparison
+
+        python ../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../..
+        """
+
+
+rule buscomp_hyb_hyb_asm:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{hhyb}/{hhyb}-scaffold.fa", hhyb = HYB_ASM),
+        shortasms=expand("3-metrics/busco/HYB/{hhyb}/run_{hhyb}-scaffold/short_summary_{hhyb}-scaffold.txt", hhyb = HYB_ASM)
+    output:
+        ratings="3-metrics/buscomp/HYB/hyb-hyb-asm-comparison/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/hyb-hyb-asm-comparison.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/buscomp-hyb-hyb-asm-comparison-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/hyb-hyb-asm-comparison/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/hyb-hyb-asm-comparison/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/hyb-hyb-asm-comparison/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../busco/HYB/*/run_*-scaffold,../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile=hyb-hyb-asm-comparison\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/hyb-hyb-asm-comparison/input.ini
+        cd 3-metrics/buscomp/HYB/hyb-hyb-asm-comparison
+
+        python ../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../..
+        """
+
+# Illumina Polishing
+
+
+rule buscomp_ill_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/ILL/{{asm}}/{{asm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/ILL/{{asm}}/run_{{asm}}-scaffold-{pol}-{i}/short_summary_{{asm}}-scaffold-{pol}-{i}.txt", pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/ILL/{asm}/{asm}-scaffold-short/buscomp-ratings.tdt"
+    log:
+        "logs/ILL/buscomp/{asm}/{asm}-scaffold-short.log"
+    benchmark:
+        "benchmarks/ILL/buscomp/{asm}/buscomp-{asm}-scaffold-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/ILL/{wildcards.asm}/{wildcards.asm}-scaffold-short/fasta
+        cp {input.asms} 3-metrics/buscomp/ILL/{wildcards.asm}/{wildcards.asm}-scaffold-short/fasta
+        cp {input.ref} 3-metrics/buscomp/ILL/{wildcards.asm}/{wildcards.asm}-scaffold-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/ILL/{wildcards.asm}/run_*-scaffold-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.asm}-scaffold-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/ILL/{wildcards.asm}/{wildcards.asm}-scaffold-short/input.ini
+        cd 3-metrics/buscomp/ILL/{wildcards.asm}/{wildcards.asm}-scaffold-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+# Nanopore Polishing
+
+
+rule buscomp_nano_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/NANO/{{asm}}/{{asm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/NANO/{{asm}}/run_{{asm}}-scaffold-{pol}-{i}/short_summary_{{asm}}-scaffold-{pol}-{i}.txt", pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/NANO/{asm}/{asm}-scaffold-short/buscomp-ratings.tdt"
+    log:
+        "logs/NANO/buscomp/{asm}/{asm}-scaffold-short.log"
+    benchmark:
+        "benchmarks/NANO/buscomp/{asm}/buscomp-{asm}-scaffold-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-short/fasta
+        cp {input.asms} 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-short/fasta
+        cp {input.ref} 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/NANO/{wildcards.asm}/run_*-scaffold-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.asm}-scaffold-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-short/input.ini
+        cd 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_nano_long:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/NANO/{{asm}}/{{asm}}-scaffold-{pol}-{j}.fa", pol = NANO_POL, j = ["1","2","3","4"]),
+        shortasms=expand("3-metrics/busco/NANO/{{asm}}/run_{{asm}}-scaffold-{pol}-{j}/short_summary_{{asm}}-scaffold-{pol}-{j}.txt", pol = NANO_POL, j = ["1","2","3","4"])
+    output:
+        ratings="3-metrics/buscomp/NANO/{asm}/{asm}-scaffold-long/buscomp-ratings.tdt"
+    log:
+        "logs/NANO/buscomp/{asm}/{asm}-scaffold-long.log"
+    benchmark:
+        "benchmarks/NANO/buscomp/{asm}/buscomp-{asm}-scaffold-long-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long/fasta
+        cp {input.asms} 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long/fasta
+        cp {input.ref} 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/NANO/{wildcards.asm}/run_*-scaffold-long-*-nano-[1234],../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.asm}-scaffold-long\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long/input.ini
+        cd 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_nano_long_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/NANO/{{asm}}/{{asm}}-scaffold-{lpol}-4-{pol}-{i}.fa", lpol = NANO_POL, pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/NANO/{{asm}}/run_{{asm}}-scaffold-{lpol}-4-{pol}-{i}/short_summary_{{asm}}-scaffold-{lpol}-4-{pol}-{i}.txt", lpol = NANO_POL, pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/NANO/{asm}/{asm}-scaffold-long-short/buscomp-ratings.tdt"
+    log:
+        "logs/NANO/buscomp/{asm}/{asm}-scaffold-long-short.log"
+    benchmark:
+        "benchmarks/NANO/buscomp/{asm}/buscomp-{asm}-scaffold-long-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short/fasta
+        cp {input.asms} 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short/fasta
+        cp {input.ref} 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/NANO/{wildcards.asm}/run_*-scaffold-long-*-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.asm}-scaffold-long-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short/input.ini
+        cd 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_nano_hyb:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/NANO/{{asm}}/{{asm}}-scaffold-{hpol}-{j}.fa", hpol = NANO_HYB_POL, j = ["1","2","3","4"]),
+        shortasms=expand("3-metrics/busco/NANO/{{asm}}/run_{{asm}}-scaffold-{hpol}-{j}/short_summary_{{asm}}-scaffold-{hpol}-{j}.txt", hpol = NANO_HYB_POL, j = ["1","2","3","4"])
+    output:
+        ratings="3-metrics/buscomp/NANO/{asm}/{asm}-scaffold-hyb/buscomp-ratings.tdt"
+    log:
+        "logs/NANO/buscomp/{asm}/{asm}-scaffold-hyb.log"
+    benchmark:
+        "benchmarks/NANO/buscomp/{asm}/buscomp-{asm}-scaffold-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb/fasta
+        cp {input.asms} 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb/fasta
+        cp {input.ref} 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/NANO/{wildcards.asm}/run_*-scaffold-hyb-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.asm}-scaffold-hyb\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb/input.ini
+        cd 3-metrics/buscomp/NANO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+
+# PacBio Polishing
+
+rule buscomp_pacbio_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/PACBIO/{{asm}}/{{asm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/PACBIO/{{asm}}/run_{{asm}}-scaffold-{pol}-{i}/short_summary_{{asm}}-scaffold-{pol}-{i}.txt", pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/PACBIO/{asm}/{asm}-scaffold-short/buscomp-ratings.tdt"
+    log:
+        "logs/PACBIO/buscomp/{asm}/{asm}-scaffold-short.log"
+    benchmark:
+        "benchmarks/PACBIO/buscomp/{asm}/buscomp-{asm}-scaffold-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-short/fasta
+        cp {input.asms} 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-short/fasta
+        cp {input.ref} 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/PACBIO/{wildcards.asm}/run_*-scaffold-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.asm}-scaffold-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-short/input.ini
+        cd 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_pacbio_long:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/PACBIO/{{asm}}/{{asm}}-scaffold-{pol}-{j}.fa", pol = PACBIO_POL, j = ["1","2","3","4"]),
+        shortasms=expand("3-metrics/busco/PACBIO/{{asm}}/run_{{asm}}-scaffold-{pol}-{j}/short_summary_{{asm}}-scaffold-{pol}-{j}.txt", pol = PACBIO_POL, j = ["1","2","3","4"])
+    output:
+        ratings="3-metrics/buscomp/PACBIO/{asm}/{asm}-scaffold-long/buscomp-ratings.tdt"
+    log:
+        "logs/PACBIO/buscomp/{asm}/{asm}-scaffold-long.log"
+    benchmark:
+        "benchmarks/PACBIO/buscomp/{asm}/buscomp-{asm}-scaffold-long-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long/fasta
+        cp {input.asms} 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long/fasta
+        cp {input.ref} 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/PACBIO/{wildcards.asm}/run_*-scaffold-long-*-pacbio-[1234],../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.asm}-scaffold-long\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long/input.ini
+        cd 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_pacbio_long_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/PACBIO/{{asm}}/{{asm}}-scaffold-{lpol}-4-{pol}-{i}.fa", lpol = PACBIO_POL, pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/PACBIO/{{asm}}/run_{{asm}}-scaffold-{lpol}-4-{pol}-{i}/short_summary_{{asm}}-scaffold-{lpol}-4-{pol}-{i}.txt", lpol = PACBIO_POL, pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/PACBIO/{asm}/{asm}-scaffold-long-short/buscomp-ratings.tdt"
+    log:
+        "logs/PACBIO/buscomp/{asm}/{asm}-scaffold-long-short.log"
+    benchmark:
+        "benchmarks/PACBIO/buscomp/{asm}/buscomp-{asm}-scaffold-long-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short/fasta
+        cp {input.asms} 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short/fasta
+        cp {input.ref} 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/PACBIO/{wildcards.asm}/run_*-scaffold-long-*-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.asm}-scaffold-long-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short/input.ini
+        cd 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-long-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_pacbio_hyb:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/PACBIO/{{asm}}/{{asm}}-scaffold-{hpol}-{j}.fa", hpol = PACBIO_HYB_POL, j = ["1","2","3","4"]),
+        shortasms=expand("3-metrics/busco/PACBIO/{{asm}}/run_{{asm}}-scaffold-{hpol}-{j}/short_summary_{{asm}}-scaffold-{hpol}-{j}.txt", hpol = PACBIO_HYB_POL, j = ["1","2","3","4"])
+    output:
+        ratings="3-metrics/buscomp/PACBIO/{asm}/{asm}-scaffold-hyb/buscomp-ratings.tdt"
+    log:
+        "logs/PACBIO/buscomp/{asm}/{asm}-scaffold-hyb.log"
+    benchmark:
+        "benchmarks/PACBIO/buscomp/{asm}/buscomp-{asm}-scaffold-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb/fasta
+        cp {input.asms} 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb/fasta
+        cp {input.ref} 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/PACBIO/{wildcards.asm}/run_*-scaffold-hyb-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.asm}-scaffold-hyb\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb/input.ini
+        cd 3-metrics/buscomp/PACBIO/{wildcards.asm}/{wildcards.asm}-scaffold-hyb
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+# Hybrid Polishing
+
+rule buscomp_nano_hyb_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{nhasm}}/{{nhasm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/HYB/{{nhasm}}/run_{{nhasm}}-scaffold-{pol}-{i}/short_summary_{{nhasm}}-scaffold-{pol}-{i}.txt", pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{nhasm}/{nhasm}-scaffold-short/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{nhasm}/{nhasm}-scaffold-short.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{nhasm}/buscomp-{nhasm}-scaffold-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-short/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-short/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.nhasm}/run_*-scaffold-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.nhasm}-scaffold-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-short/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_nano_hyb_long:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{nhasm}}/{{nhasm}}-scaffold-{pol}-{j}.fa", pol = NANO_POL, j = ["1","2","3","4"]),
+        shortasms=expand("3-metrics/busco/HYB/{{nhasm}}/run_{{nhasm}}-scaffold-{pol}-{j}/short_summary_{{nhasm}}-scaffold-{pol}-{j}.txt", pol = NANO_POL, j = ["1","2","3","4"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{nhasm}/{nhasm}-scaffold-long/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{nhasm}/{nhasm}-scaffold-long.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{nhasm}/buscomp-{nhasm}-scaffold-long-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.nhasm}/run_*-scaffold-long-*-nano-[1234],../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.nhasm}-scaffold-long\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_nano_hyb_long_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{nhasm}}/{{nhasm}}-scaffold-{lpol}-4-{pol}-{i}.fa", lpol = NANO_POL, pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/HYB/{{nhasm}}/run_{{nhasm}}-scaffold-{lpol}-4-{pol}-{i}/short_summary_{{nhasm}}-scaffold-{lpol}-4-{pol}-{i}.txt", lpol = NANO_POL, pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{nhasm}/{nhasm}-scaffold-long-short/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{nhasm}/{nhasm}-scaffold-long-short.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{nhasm}/buscomp-{nhasm}-scaffold-long-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long-short/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long-short/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.nhasm}/run_*-scaffold-long-*-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.nhasm}-scaffold-long-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long-short/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-long-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_nano_hyb_hyb:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{nhasm}}/{{nhasm}}-scaffold-{hpol}-{j}.fa", hpol = NANO_HYB_POL, j = ["1","2","3","4"]),
+        shortasms=expand("3-metrics/busco/HYB/{{nhasm}}/run_{{nhasm}}-scaffold-{hpol}-{j}/short_summary_{{nhasm}}-scaffold-{hpol}-{j}.txt", hpol = NANO_HYB_POL, j = ["1","2","3","4"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{nhasm}/{nhasm}-scaffold-hyb/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{nhasm}/{nhasm}-scaffold-hyb.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{nhasm}/buscomp-{nhasm}-scaffold-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-hyb/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-hyb/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-hyb/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.nhasm}/run_*-scaffold-hyb-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.nhasm}-scaffold-hyb\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-hyb/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.nhasm}/{wildcards.nhasm}-scaffold-hyb
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+# ILL-PACBIO
+
+rule buscomp_pacbio_hyb_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{phasm}}/{{phasm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/HYB/{{phasm}}/run_{{phasm}}-scaffold-{pol}-{i}/short_summary_{{phasm}}-scaffold-{pol}-{i}.txt", pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{phasm}/{phasm}-scaffold-short/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{phasm}/{phasm}-scaffold-short.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{phasm}/buscomp-{phasm}-scaffold-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-short/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-short/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.phasm}/run_*-scaffold-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.phasm}-scaffold-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-short/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_pacbio_hyb_long:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{phasm}}/{{phasm}}-scaffold-{pol}-{j}.fa", pol = PACBIO_POL, j = ["1","2","3","4"]),
+        shortasms=expand("3-metrics/busco/HYB/{{phasm}}/run_{{phasm}}-scaffold-{pol}-{j}/short_summary_{{phasm}}-scaffold-{pol}-{j}.txt", pol = PACBIO_POL, j = ["1","2","3","4"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{phasm}/{phasm}-scaffold-long/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{phasm}/{phasm}-scaffold-long.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{phasm}/buscomp-{phasm}-scaffold-long-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.phasm}/run_*-scaffold-long-*-pacbio-[1234],../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.phasm}-scaffold-long\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_pacbio_hyb_long_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{phasm}}/{{phasm}}-scaffold-{lpol}-4-{pol}-{i}.fa", lpol = PACBIO_POL, pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/HYB/{{phasm}}/run_{{phasm}}-scaffold-{lpol}-4-{pol}-{i}/short_summary_{{phasm}}-scaffold-{lpol}-4-{pol}-{i}.txt", lpol = PACBIO_POL, pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{phasm}/{phasm}-scaffold-long-short/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{phasm}/{phasm}-scaffold-long-short.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{phasm}/buscomp-{phasm}-scaffold-long-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long-short/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long-short/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.phasm}/run_*-scaffold-long-*-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.phasm}-scaffold-long-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long-short/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-long-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_pacbio_hyb_hyb:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{phasm}}/{{phasm}}-scaffold-{hpol}-{j}.fa", hpol = PACBIO_HYB_POL, j = ["1","2","3","4"]),
+        shortasms=expand("3-metrics/busco/HYB/{{phasm}}/run_{{phasm}}-scaffold-{hpol}-{j}/short_summary_{{phasm}}-scaffold-{hpol}-{j}.txt", hpol = PACBIO_HYB_POL, j = ["1","2","3","4"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{phasm}/{phasm}-scaffold-hyb/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{phasm}/{phasm}-scaffold-hyb.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{phasm}/buscomp-{phasm}-scaffold-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-hyb/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-hyb/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-hyb/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.phasm}/run_*-scaffold-hyb-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.phasm}-scaffold-hyb\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-hyb/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.phasm}/{wildcards.phasm}-scaffold-hyb
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+# ILL-NANO-PACBIO
+
+rule buscomp_hyb_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{hhasm}}/{{hhasm}}-scaffold-{pol}-{i}.fa", pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/HYB/{{hhasm}}/run_{{hhasm}}-scaffold-{pol}-{i}/short_summary_{{hhasm}}-scaffold-{pol}-{i}.txt", pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{hhasm}/{hhasm}-scaffold-short/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{hhasm}/{hhasm}-scaffold-short.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{hhasm}/buscomp-{hhasm}-scaffold-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-short/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-short/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.hhasm}/run_*-scaffold-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.hhasm}-scaffold-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-short/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_hyb_long:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{hhasm}}/{{hhasm}}-scaffold-{pol}-{j}.fa", pol = LONG_HYB_POL, j = ["1","2","3","4"]),
+        shortasms=expand("3-metrics/busco/HYB/{{hhasm}}/run_{{hhasm}}-scaffold-{pol}-{j}/short_summary_{{hhasm}}-scaffold-{pol}-{j}.txt", pol = LONG_HYB_POL, j = ["1","2","3","4"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{hhasm}/{hhasm}-scaffold-long/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{hhasm}/{hhasm}-scaffold-long.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{hhasm}/buscomp-{hhasm}-scaffold-long-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.hhasm}/run_*-scaffold-long-*-comb-[1234],../../../../busco/HYB/*/run_*-scaffold-long-*-nano-[1234],../../../../busco/HYB/*/run_*-scaffold-long-*-pacbio-[1234],../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.hhasm}-scaffold-long\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_hyb_long_short:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{hhasm}}/{{hhasm}}-scaffold-{lpol}-4-{pol}-{i}.fa", lpol = LONG_HYB_POL, pol = ILL_POL, i = ["1","2","3"]),
+        shortasms=expand("3-metrics/busco/HYB/{{hhasm}}/run_{{hhasm}}-scaffold-{lpol}-4-{pol}-{i}/short_summary_{{hhasm}}-scaffold-{lpol}-4-{pol}-{i}.txt", lpol = LONG_HYB_POL, pol = ILL_POL, i = ["1","2","3"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{hhasm}/{hhasm}-scaffold-long-short/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{hhasm}/{hhasm}-scaffold-long-short.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{hhasm}/buscomp-{hhasm}-scaffold-long-short-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long-short/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long-short/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long-short/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.hhasm}/run_*-scaffold-long-*-short-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.hhasm}-scaffold-long-short\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long-short/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-long-short
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """
+
+rule buscomp_hyb_hyb:
+    input:
+        ref="reference/ref.fa",
+        short="3-metrics/busco/ref/run_ref/short_summary_ref.txt",
+        asms=expand("2-polishing/HYB/{{hhasm}}/{{hhasm}}-scaffold-{hpol}-{j}.fa", hpol = HYB_HYB_POL, j = ["1","2","3","4"]),
+        shortasms=expand("3-metrics/busco/HYB/{{hhasm}}/run_{{hhasm}}-scaffold-{hpol}-{j}/short_summary_{{hhasm}}-scaffold-{hpol}-{j}.txt", hpol = HYB_HYB_POL, j = ["1","2","3","4"])
+    output:
+        ratings="3-metrics/buscomp/HYB/{hhasm}/{hhasm}-scaffold-hyb/buscomp-ratings.tdt"
+    log:
+        "logs/HYB/buscomp/{hhasm}/{hhasm}-scaffold-hyb.log"
+    benchmark:
+        "benchmarks/HYB/buscomp/{hhasm}/buscomp-{hhasm}-scaffold-hyb-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        module unload miniconda3
+        module load python/2.7.11 pandoc/1.12.3 R/3.6.3 minimap2/2.16 blast+/2.2.31 augustus/3.3.2 hmmer/3.1b2
+        export RSTUDIO_PANDOC=/apps/pandoc/1.12.3/bin/pandoc
+
+        mkdir -p 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-hyb/fasta
+        cp {input.asms} 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-hyb/fasta
+        cp {input.ref} 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-hyb/fasta
+
+        echo -e 'genomesize={config[genomesize]}\nruns="../../../../busco/HYB/{wildcards.hhasm}/run_*-scaffold-hyb-*,../../../../busco/ref/run_ref"\nfastadir=fasta/\nbasefile={wildcards.hhasm}-scaffold-hyb\nrmdreport=F\nfullreport=F\nforks={threads}' > 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-hyb/input.ini
+        cd 3-metrics/buscomp/HYB/{wildcards.hhasm}/{wildcards.hhasm}-scaffold-hyb
+
+        python ../../../../../../../benchmarking/buscomp/code/buscomp.py -ini input.ini i=-1 ;
+        
+        cp *.ratings.tdt buscomp-ratings.tdt
+        rm -rf fasta/ && cd ../../../../..
+        """

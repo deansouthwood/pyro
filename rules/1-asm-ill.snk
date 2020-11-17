@@ -1,0 +1,297 @@
+################################
+# ASSEMBLY FROM ILLUMINA READS #
+################################
+
+### Requires data cleaning first
+### Should have:
+###   - reads/ILL/ill_1.fastq.gz
+###   - reads/ILL/ill_2.fastq.gz
+
+rule abyss_ill:
+# ABySS Version 2.1.0 - contigs and scaffolds #
+#     Accepts gzipped inputs 
+#     k = 96 
+#     Uses bloom filter settings (B=2G H=4 kc=2 v=-v)
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz"
+    output:
+        ctg="1-assembly/ILL/abyss-ill/abyss-ill-contig.fa",
+        scf="1-assembly/ILL/abyss-ill/abyss-ill-scaffold.fa",
+        stats="3-metrics/assembly-stats/ILL/abyss-ill/abyss-ill-scaffold.txt"
+    log:
+        "logs/ILL/abyss-ill/abyss-ill.log"
+    benchmark:
+        "benchmarks/ILL/abyss-ill/abyss-ill-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/ILL/abyss-ill 
+
+        abyss-pe name=abyss-ill k=96 in='../../../{input.i1} ../../../{input.i2}' j={threads} B=2G H=4 kc=2 v=-v;
+
+        mv abyss-ill-contigs.fa ../../../{output.ctg} && mv abyss-ill-scaffolds.fa ../../../{output.scf};
+
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule masurca_ill:
+# MaSuRCA Version 3.3.2 #
+#     Prepares input script for MaSuRCA assembler and runs
+#     Requires config file template
+#     Accepts fastq or fastq.gz
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz",
+        conf="config/default-masurca-config.txt"
+    params:
+        jfsize=int(list({config["genomesize"]})[0])*20
+    output:
+        scf="1-assembly/ILL/masurca-ill/masurca-ill-scaffold.fa",
+        stats="3-metrics/assembly-stats/ILL/masurca-ill/masurca-ill-scaffold.txt"
+    log:
+        "logs/ILL/masurca-ill/masurca-ill.log"
+    benchmark:
+        "benchmarks/ILL/masurca-ill/masurca-ill-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/ILL/masurca-ill/
+        cp ../../../{input.conf} config.txt
+
+        sed -i 's|INPUTREAD1|../../../{input.i1}|' config.txt;
+        sed -i 's|INPUTREAD2|../../../{input.i2}|' config.txt;
+        sed -i 's|JELLYFISHSIZE|{params.jfsize}|' config.txt;
+
+        masurca config.txt;
+
+        bash assemble.sh;
+
+        cp CA/final.genome.scf.fasta ../../../{output.scf};
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule meraculous_ill:
+# Meraculous Version 2.2.5.1 - contigs and scaffolds #
+#     Accepts gzipped input BUT input must have specific headers
+#     requires BOOST library - works with Version 1.61.0
+#     requires config file
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz",
+        conf="config/default-meraculous.config"
+    params:
+        gb=int(list({config["genomesize"]})[0])/1000000000.0
+    output:
+        scf="1-assembly/ILL/meraculous-ill/meraculous-ill-scaffold.fa",
+        stats="3-metrics/assembly-stats/ILL/meraculous-ill/meraculous-ill-scaffold.txt"
+    log:
+        "logs/ILL/meraculous-ill/meraculous-ill.log"
+    benchmark:
+        "benchmarks/ILL/meraculous-ill/meraculous-ill-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cp {input.i1} {input.i2} 1-assembly/ILL/meraculous-ill/; 
+        cd 1-assembly/ILL/meraculous-ill;
+ 
+        pigz -d -c ill_1.fastq.gz | sed '/^@SRR/ s/ .*/ /g' | sed '/^@SRR/ s/ /\/1/g' | pigz -c > input_1.fastq.gz;
+        pigz -d -c ill_2.fastq.gz | sed '/^@SRR/ s/ .*/ /g' | sed '/^@SRR/ s/ /\/2/g' | pigz -c > input_2.fastq.gz;
+
+        cp ../../../{input.conf} meraculous.config;
+        sed -i 's|INPUTREAD1|input_1.fastq.gz|' meraculous.config;
+        sed -i 's|INPUTREAD2|input_2.fastq.gz|' meraculous.config;
+        sed -i 's|YOURGENOMESIZE|{params.gb}|' meraculous.config;
+        sed -i 's|THREADS|{threads}|' meraculous.config;
+
+        run_meraculous.sh -c meraculous.config -dir run -cleanup_level=1;
+
+        cp run/meraculous_final_results/final.scaffolds.fa ../../../{output.scf};
+        cd ../../..
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule platanus_ill:
+# Platanus Version 1.2.4 - contigs and scaffolds #
+#     Does NOT accept gzipped input
+#     k = 32
+#     Step 1: produces contigs (longest step), Step 2: scaffolds (quick), Step 3: gap close (quick)
+#     m = memory
+    input:
+        in1="reads/ILL/ill_1.fastq",
+        in2="reads/ILL/ill_2.fastq"
+    output:
+        ctg="1-assembly/ILL/platanus-ill/platanus-ill-contig.fa",
+        scf="1-assembly/ILL/platanus-ill/platanus-ill-scaffold.fa",
+        stats="3-metrics/assembly-stats/ILL/platanus-ill/platanus-ill-scaffold.txt"
+    log:
+        "logs/ILL/platanus-ill/platanus-ill.log"
+    benchmark:
+        "benchmarks/ILL/platanus-ill/platanus-ill-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/ILL/platanus-ill/ 
+
+        platanus assemble -o platanus-ill -f ../../../{input.in1} ../../../{input.in2} -k 32 -t {threads} -m {config[mem]};
+
+        platanus scaffold -o platanus-ill -c platanus-ill_contig.fa -b platanus-ill_contigBubble.fa -IP1 ../../../{input.in1} ../../../{input.in2} -t {threads};
+
+        platanus gap_close -o platanus-ill -c platanus-ill_scaffold.fa -f ../../../{input.in1} ../../../{input.in2} -t {threads};
+
+        cp platanus-ill_gapClosed.fa ../../../{output.scf};
+        cp platanus-ill_contig.fa ../../../{output.ctg};
+        cd ../../../
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule ray_ill:
+# Ray Version 2.3.1 - contigs and scaffolds #
+#     Does NOT accept gzipped input 
+    input:
+        in1="reads/ILL/ill_1.fastq",
+        in2="reads/ILL/ill_2.fastq"
+    output:
+        ctg="1-assembly/ILL/ray-ill/ray-ill-contig.fa",
+        scf="1-assembly/ILL/ray-ill/ray-ill-scaffold.fa",
+        stats="3-metrics/assembly-stats/ILL/ray-ill/ray-ill-scaffold.txt"
+    log:
+        "logs/ILL/ray-ill/ray-ill.log"
+    benchmark:
+        "benchmarks/ILL/ray-ill/ray-ill-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        mpiexec -n {threads} Ray -p {input.in1} {input.in2} -o 1-assembly/ILL/ray-ill/ray_assembly;
+
+        cp 1-assembly/ILL/ray-ill/ray_assembly/Scaffolds.fasta {output.scf};
+        cp 1-assembly/ILL/ray-ill/ray_assembly/Contigs.fasta {output.ctg};
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule soap_ill:
+# SOAPdenovo2 Version r240 - contigs and scaffolds #
+#     Does NOT accept gzipped input
+#     k = 51
+#     N = genome size
+#     o = prefix
+#     Requires config file - should automate
+    input:
+        in1="reads/ILL/ill_1.fastq",
+        in2="reads/ILL/ill_2.fastq",
+        conf="config/default-soap.config"
+    output:
+        ctg="1-assembly/ILL/soap-ill/soap-ill-contig.fa",
+        scf="1-assembly/ILL/soap-ill/soap-ill-scaffold.fa",
+        stats="3-metrics/assembly-stats/ILL/soap-ill/soap-ill-scaffold.txt"
+    log:
+        "logs/ILL/soap-ill/soap-ill.log"
+    benchmark:
+        "benchmarks/ILL/soap-ill/soap-ill-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/ILL/soap-ill
+
+        cp ../../../{input.conf} soap.config;
+        sed -i 's|INPUTREAD1|../../../{input.in1}|' soap.config;
+        sed -i 's|INPUTREAD2|../../../{input.in2}|' soap.config;
+
+        SOAPdenovo-63mer all -s soap.config -o soap-ill  -K 51 -p {threads} -N {config[genomesize]};
+
+        cp *.scafSeq ../../../{output.scf} && cp *.contig ../../../{output.ctg};
+        cd ../../../
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule spades_ill:
+# SPAdes Version 3.12.0 - contigs and scaffolds #
+#     Accepts gzipped input
+#     m = memory 
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz"
+    output:
+        scf="1-assembly/ILL/spades-ill/spades-ill-scaffold.fa",
+        ctg="1-assembly/ILL/spades-ill/spades-ill-contig.fa",
+        stats="3-metrics/assembly-stats/ILL/spades-ill/spades-ill-scaffold.txt"
+    log:
+        "logs/ILL/spades-ill/spades-ill.log"
+    benchmark:
+        "benchmarks/ILL/spades-ill/spades-ill-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        spades.py -1 {input.i1} -2 {input.i2} -t {threads} -m {config[mem]} -o 1-assembly/ILL/spades-ill/;
+
+        mv 1-assembly/ILL/spades-ill/scaffolds.fasta {output.scf} && mv 1-assembly/ILL/spades-ill/contigs.fasta {output.ctg};
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule sparse_dbg2olc_ill:
+# SparseAssembler Version 20160920 and DBG2OLC Version 20160920 #
+#     Does NOT accept gzipped input
+#     Single thread only
+#     SparseAssembler settings: k = 51, g = 10, LD = 0
+#     GS = genome size
+#     DBG2OLC settings: k = 31, KmerCovTh = 0, MinOverlap = 50, PathCovTh = 1, LD1 = 0
+    input:
+        in1="reads/ILL/ill_1.fastq",
+        in2="reads/ILL/ill_2.fastq"
+    output:
+        ctg="1-assembly/ILL/sparse-dbg2olc-ill/sparse-dbg2olc-ill-contig.fa",
+        scf="1-assembly/ILL/sparse-dbg2olc-ill/sparse-dbg2olc-ill-scaffold.fa",
+        stats="3-metrics/assembly-stats/ILL/sparse-dbg2olc-ill/sparse-dbg2olc-ill-scaffold.txt"
+    log:
+        "logs/ILL/sparse-dbg2olc-ill/sparse-dbg2olc-ill.log"
+    benchmark:
+        "benchmarks/ILL/sparse-dbg2olc-ill/sparse-dbg2olc-ill-benchmark.txt"
+    threads: 1
+    shell:
+        """
+        cd 1-assembly/ILL/sparse-dbg2olc-ill/
+
+        SparseAssembler g 10 k 51 LD 0 GS {config[genomesize]} f ../../../{input.in1} f ../../../{input.in2};
+
+        mv Contigs.txt ../../../{output.ctg};
+
+        DBG2OLC LD1 0 Contigs ../../../{output.ctg} k 31 KmerCovTh 0 MinOverlap 50 PathCovTh 1 f ../../../{input.in1} f ../../../{input.in2};
+
+        mv DBG2OLC_Consensus.fasta ../../../{output.scf};
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+		
+rule w2rap_ill:
+# w2rap Version 20180828 - contigs and scaffolds #
+#     Does NOT accept gzipped input
+#     Requires GCC (v 6.4.0) and JEMALLOC (v 5.2.0) to run
+#     m = memory
+    input:
+        in1="reads/ILL/ill_1.fastq",
+        in2="reads/ILL/ill_2.fastq"
+    output:
+        scf="1-assembly/ILL/w2rap-ill/w2rap-ill-scaffold.fa",
+        stats="3-metrics/assembly-stats/ILL/w2rap-ill/w2rap-ill-scaffold.txt"
+    log:
+        "logs/ILL/w2rap-ill/w2rap-ill.log"
+    benchmark:
+        "benchmarks/ILL/w2rap-ill/w2rap-ill-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        w2rap-contigger -t {threads} -m {config[mem]} -o 1-assembly/ILL/w2rap-ill/ -r {input.in1},{input.in2} -p w2rap-ill;
+
+        cp 1-assembly/ILL/w2rap-ill/a.lines.fasta {output.scf};
+
+        assembly-stats {output.scf} > {output.stats};
+        """

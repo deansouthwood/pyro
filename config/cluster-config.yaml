@@ -1,0 +1,473 @@
+__default__ :
+        job-name        : "{rule}"
+        time            : 0-06:00:00
+        ntasks-per-node : 20
+        nodes           : 1
+        mem             : 110g
+        output          : logs/jobs/%x-%j.out
+        error           : logs/jobs/%x-%j.err
+
+#############
+# Data Prep #
+#############
+
+fastqc :
+        job-name : fastqc
+        time     : 0-01:00:00
+
+trim_ill :
+        job-name : trim-ill
+        time     : 0-02:00:00
+
+trim_long :
+        job-name : trim-{wildcards.longreadtype}
+        time     : 0-02:00:00
+
+bam_pacbio :
+        job-name : bam-pb
+
+############
+# Assembly #
+############
+
+## Illumina
+
+abyss_ill :
+        job-name : abyss
+        time     : 0-02:00:00
+
+masurca_ill :
+        job-name : masurca
+        time     : 1-00:00:00
+
+meraculous_ill :
+        job-name : meraculous
+        time     : 0-03:00:00
+
+platanus_ill :
+        job-name : plat
+        time     : 0-03:00:00
+
+ray_ill :
+        job-name : ray
+
+soap_ill :
+        job-name : soap
+        time     : 0-02:00:00
+
+spades_ill :
+        job-name : spades
+
+sparse_dbg2olc_ill :
+        job-name : sparse-dbg
+        time     : 0-04:00:00
+
+w2rap_ill :
+        job-name : w2rap
+        time     : 0-02:00:00
+
+## Nanopore
+
+canu_nano :
+        job-name : canu-n
+        time     : 4-00:00:00
+
+canu_fast_nano :
+        job-name : canu-fn
+        time     : 2-00:00:00
+
+flye_nano :
+        job-name : flye-n
+        time     : 0-06:00:00
+
+miniasm_nano :
+        job-name : mini-n
+        time     : 0-02:00:00
+
+necat_nano :
+        job-name : necat-n
+        time     : 0-12:00:00
+
+raven_nano :
+        job-name : raven-n
+        time     : 0-02:00:00
+
+shasta_nano :
+        job-name : shasta
+        time     : 0-02:00:00
+
+wtdbg2_nano :
+        job-name : wtdbg-n
+        time     : 0-02:00:00
+
+## PacBio
+
+canu_pacbio :
+        job-name : canu-p
+        time     : 1-00:00:00
+
+falcon_pacbio :
+        job-name : falcon
+        time     : 0-06:00:00
+
+flye_pacbio :
+        job-name : flye-p
+        time     : 0-06:00:00
+
+mecat2_pacbio :
+        job-name : mecat-p
+        time     : 0-12:00:00
+
+miniasm_pacbio :
+        job-name : mini-p
+        time     : 0-02:00:00
+
+raven_pacbio :
+        job-name : raven-p
+        time     : 0-03:00:00
+
+wtdbg2_pacbio :
+        job-name : wtdbg-p
+        time     : 0-02:00:00
+
+## Hybrid 
+# Illumina-Nanopore
+
+haslr_nano_hyb :
+        job-name : haslr-n
+        time     : 0-02:00:00
+
+# Illumina-PacBio
+
+dbg2olc_pacbio_hyb :
+        job-name : dbg2olc
+        time     : 0-08:00:00
+
+haslr_pacbio_hyb :
+        job-name : haslr-p
+        time     : 0-02:00:00
+
+# Illumina-Nanopore-PacBio
+
+masurca_hyb :
+        job-name : masurca-h
+        time     : 0-12:00:00
+
+masurca_flye_hyb :
+        job-name : masurca-fh
+        time     : 0-12:00:00
+
+spades_hyb :
+        job-name : spades-h
+        time     : 0-12:00:00
+
+#############
+# Polishing #
+#############
+
+## Short Reads
+
+short_gatk :
+        job-name : sh-gat
+        time     : 0-12:00:00
+
+short_hypo :
+        job-name : sh-hyp
+        time     : 0-02:00:00
+
+short_nextpolish :
+        job-name : sh-nex
+        time     : 0-06:00:00
+
+short_ntedit :
+        job-name : sh-nte
+        time     : 0-02:00:00
+
+short_pilon :
+        job-name : sh-pil
+        time     : 0-12:00:00
+
+short_polca :
+        job-name : sh-pol
+        time     : 0-06:00:00
+
+short_racon :
+        job-name : sh-rac
+        time     : 0-03:00:00
+
+## Long Reads
+
+# Nanopore
+
+long_medaka_nano :
+        job-name : lo-med
+        time     : 0-16:00:00
+
+long_nextpolish_nano :
+        job-name : lo-nexn
+        time     : 0-06:00:00
+
+long_racon_nano :
+        job-name : lo-racn
+        time     : 0-03:00:00
+
+long_medrac_nano :
+        job-name : lo-mdr
+        time     : 0-16:00:00
+
+# PacBio
+
+long_arrow_pacbio :
+        job-name : lo-arr
+        time     : 3-00:00:00
+
+long_nextpolish_pacbio :
+        job-name : lo-nexp
+        time     : 0-06:00:00
+
+long_racon_pacbio :
+        job-name : lo-racp
+        time     : 0-03:00:00
+
+# Combined/Hybrid
+
+long_nextpolish_comb :
+        job-name : lo-nexc
+        time     : 0-06:00:00
+
+long_racon_comb :
+        job-name : lo-racc
+        time     : 0-03:00:00
+
+long_medrac_comb :
+        job-name : lo-mdrc
+        time     : 0-16:00:00
+
+# Hybrid
+
+hyb_hypo_nano :
+        job-name : hy-hypn
+        time     : 0-06:00:00
+
+hyb_hypo_pacbio :
+        job-name : hy-hypp
+        time     : 0-06:00:00
+
+hyb_hypo_hyb :
+        job-name : hy-hyph
+        time     : 0-06:00:00
+
+###########
+# Metrics #
+###########
+
+## dnAQET
+
+dnaqet_evaluate_asm :
+        job-name : dq-asm
+        ntasks-per-node : 5
+        mem      : 5g
+        time     : 0-00:10:00
+
+dnaqet_evaluate_pol_i :
+        job-name : dq-poli
+        ntasks-per-node : 5
+        mem      : 5g
+        time     : 0-00:10:00
+
+dnaqet_evaluate_pol_j :
+        job-name : dq-polj
+        ntasks-per-node : 5
+        mem      : 5g
+        time     : 0-00:15:00
+
+## Quast
+
+# Assemblies
+
+quast_ill_asm :
+        job-name : qu-ill
+        mem      : 50g
+        time     : 0-07:00:00
+
+quast_nano_asm :
+        job-name : qu-nano
+        mem      : 50g
+        time     : 0-07:00:00
+
+quast_pacbio_asm :
+        job-name : qu-pb
+        mem      : 50g
+        time     : 0-07:00:00
+
+quast_nano_hyb_asm :
+        job-name : qu-nh
+        mem      : 50g
+        time     : 0-07:00:00
+
+quast_pacbio_hyb_asm :
+        job-name : qu-ph
+        mem      : 50g
+        time     : 0-07:00:00
+
+quast_hyb_hyb_asm :
+        job-name : qu-hh
+        mem      : 50g
+        time     : 0-07:00:00
+
+# Illumina Polishing
+
+quast_ill_short :
+        job-name : qu-ill-pol-s
+        mem      : 50g
+        time     : 0-12:00:00
+
+# Nanopore Polishing
+
+quast_nano_short :
+        job-name : qu-nano-pol-s
+        mem      : 50g
+        time     : 0-12:00:00
+
+quast_nano_long :
+        job-name : qu-nano-pol-l
+        mem      : 50g
+        time     : 0-12:00:00
+
+quast_nano_short_long :
+        job-name : qu-nano-pol-sl
+        mem      : 50g
+        time     : 2-00:00:00
+
+quast_nano_long_short :
+        job-name : qu-nano-pol-ls
+        mem      : 50g
+        time     : 2-00:00:00
+
+quast_nano_hyb :
+        job-name : qu-nano-pol-h
+        mem      : 50g
+        time     : 0-05:00:00
+
+# PacBio Polishing
+
+quast_pacbio_short :
+        job-name : qu-pacbio-pol-s
+        mem      : 50g
+        time     : 0-12:00:00
+
+quast_pacbio_long :
+        job-name : qu-pacbio-pol-l
+        mem      : 50g
+        time     : 0-12:00:00
+
+quast_pacbio_short_long :
+        job-name : qu-pacbio-pol-sl
+        mem      : 50g
+        time     : 2-00:00:00
+
+quast_pacbio_long_short :
+        job-name : qu-pacbio-pol-ls
+        mem      : 50g
+        time     : 2-00:00:00
+
+quast_pacbio_hyb :
+        job-name : qu-pacbio-pol-h
+        mem      : 50g
+        time     : 0-05:00:00
+
+# Nanopore-Hybrid Polishing
+
+quast_nano_hyb_short :
+        job-name : qu-nh-pol-s
+        mem      : 50g
+        time     : 0-12:00:00
+
+quast_nano_hyb_long :
+        job-name : qu-nh-pol-l
+        mem      : 50g
+        time     : 0-12:00:00
+
+quast_nano_hyb_short_long :
+        job-name : qu-nh-pol-sl
+        mem      : 50g
+        time     : 2-00:00:00
+
+quast_nano_hyb_long_short :
+        job-name : qu-nh-pol-ls
+        mem      : 50g
+        time     : 2-00:00:00
+
+quast_nano_hyb_hyb :
+        job-name : qu-nh-pol-h
+        mem      : 50g
+        time     : 0-05:00:00
+
+# PacBio-Hybrid Polishing
+
+quast_pacbio_hyb_short :
+        job-name : qu-ph-pol-s
+        mem      : 50g
+        time     : 0-12:00:00
+
+quast_pacbio_hyb_long :
+        job-name : qu-ph-pol-l
+        mem      : 50g
+        time     : 0-12:00:00
+
+quast_pacbio_hyb_short_long :
+        job-name : qu-ph-pol-sl
+        mem      : 50g
+        time     : 2-00:00:00
+
+quast_pacbio_hyb_long_short :
+        job-name : qu-ph-pol-ls
+        mem      : 50g
+        time     : 2-00:00:00
+
+quast_pacbio_hyb_hyb :
+        job-name : qu-ph-pol-h
+        mem      : 50g
+        time     : 0-05:00:00
+
+# Hybrid Polishing
+
+quast_hyb_short :
+        job-name : qu-hyb-pol-s
+        mem      : 50g
+        time     : 0-12:00:00
+
+quast_hyb_long :
+        job-name : qu-hyb-pol-l
+        mem      : 50g
+        time     : 0-12:00:00
+
+quast_hyb_short_long :
+        job-name : qu-hyb-pol-sl
+        mem      : 50g
+        time     : 2-00:00:00
+
+quast_hyb_long_short :
+        job-name : qu-hyb-pol-ls
+        mem      : 50g
+        time     : 2-00:00:00
+
+quast_hyb_hyb :
+        job-name : qu-hyb-pol-h
+        mem      : 50g
+        time     : 0-05:00:00
+
+## RepeatMasker
+
+repeatmasker_asm :
+        job-name : rm-asm
+        time     : 0-01:00:00
+
+repeatmasker_pol_i :
+        job-name : rm-poli
+        time     : 0-03:00:00
+
+repeatmasker_pol_j :
+        job-name : rm-polj
+        time     : 0-04:00:00
+

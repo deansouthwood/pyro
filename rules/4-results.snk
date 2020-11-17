@@ -1,0 +1,41 @@
+###########
+# RESULTS #
+###########
+
+import glob
+
+### Requires data cleaning, assembly, polishing and metric calculation first
+
+ALLCSVPATH, = glob_wildcards("4-results/{allcsvpath}.csv")
+
+localrules: 
+
+rule write_metrics:
+    input:
+        asm="2-polishing/{techs}/{asm}/{asm}-{tag}.fa"
+    output:
+        csv="4-results/{techs}/{asm}/{asm}-{tag}-results.csv"
+    log:
+        "logs/{techs}/results/{asm}/{asm}-{tag}-results.log"
+    benchmark:
+        "benchmarks/{techs}/results/{asm}/{asm}-{tag}-benchmark.txt"
+    threads: 1
+    shell:
+        """
+        python scripts/results-extractor.py -a {input.asm};
+        """
+
+rule combine_metrics:
+    input:
+        ".flags/4-res/results-write-all.success"
+    output:
+        "4-results/pyro-results.csv"
+    log:
+        "logs/pyro-results.log"
+    benchmark:
+        "benchmarks/pyro-results-benchmark.txt"
+    threads: 1
+    shell:
+        """
+        python scripts/concat-results.py
+        """

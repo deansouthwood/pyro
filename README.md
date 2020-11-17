@@ -50,6 +50,8 @@ To install Pyro, you have two basic options:
    tar zxf pyro-v0.9.tar.gz
    ```
 
+Finally, download the Singularity container from [here](https://zenodo.org/) - large download! - and place the container in the 'singularity' folder.
+
 Basic Usage
 -----------
 

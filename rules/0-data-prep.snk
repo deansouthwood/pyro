@@ -1,0 +1,142 @@
+#################################
+# DATA CLEANING AND PREPARATION #
+#################################
+
+### Requires data to be saved in reads/ILL/ as two files of paired-end reads: ill_1-pre.fastq.gz and ill_2-pre.fastq.gz
+### For long reads, requires reads/NANO/ as nano-pre.fastq.gz and reads/PACBIO/ as pacbio-pre.fastq.gz
+
+localrules: combine_ill, unzip_ill
+
+rule fastqc: 
+# FastQC Version 0.11.8 #
+#     Checks data quality before/after any trimming etc
+    input:
+        i1="reads/{reads}/{readtype}.fastq.gz"
+    output:
+        "reads/{reads}/{readtype}_fastqc.html",
+        temp("reads/{reads}/{readtype}_fastqc.zip")
+    threads: 20
+    shell:
+        "fastqc -t {threads} {input.i1}"
+
+rule trim_ill:
+# Trim_Galore Version 0.6.4 #
+#     QC for Illumina reads - does quality pass for > 20 score, trims/removes N reads, length > 90
+    input:
+        i1="reads/ILL/ill_1-pre.fastq.gz",
+        i2="reads/ILL/ill_2-pre.fastq.gz",
+        fq1="reads/ILL/ill_1-pre_fastqc.html",
+        fq2="reads/ILL/ill_2-pre_fastqc.html"
+    output:
+        out1="reads/ILL/ill_1.fastq.gz",
+        out2="reads/ILL/ill_2.fastq.gz"
+    log:
+        "logs/trim/ILL/ill-trim.log"
+    threads: 20
+    shell:
+        """
+        mkdir -p reads/ILL/trim-wkdir && cd reads/ILL/trim-wkdir;
+
+        trim_galore --cores 4 --quality 20 --length 90 --trim-n --max_n 0 --paired ../../../{input.i1} ../../../{input.i2};
+
+        mv ill_1-pre_val_1.fq.gz ../../../{output.out1} && mv ill_2-pre_val_2.fq.gz ../../../{output.out2};
+        cd .. && rm -rf trim-wkdir && cd ../..;
+        """
+
+rule trim_long:
+# Filtlong Version 0.2.0 #
+#     QC for long reads - keeps only reads > 1000 bp and in top 90% quality
+    input:
+        pre="reads/{longreads}/{longreadtype}-pre.fastq.gz",
+        qc="reads/{longreads}/{longreadtype}-pre_fastqc.html"
+    output:
+        "reads/{longreads}/{longreadtype}.fastq.gz"
+    log:
+        "logs/trim/{longreads}/{longreadtype}-trim.log"
+    threads: 20
+    shell:
+        "filtlong --min_length 1000 --keep_percent 90 {input.pre} | pigz > {output}"
+
+rule combine_ill:
+# Quick rule that makes a combined Illumina read file with all the sequence names different (for racon polishing)
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz"
+    output:
+        comb="reads/ILL/ill_combined.fastq.gz"
+    log:
+        "logs/trim/ILL/ill-combine.log"
+    threads: 4
+    shell:
+        """
+        zcat {input.i1} {input.i2} | seqtk rename - @seq | pigz -f > {output.comb}
+        """
+
+rule unzip_ill:
+# Quick rule that unzips input files - necessary for some assemblers
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz"
+    output:
+        in1="reads/ILL/ill_1.fastq",
+        in2="reads/ILL/ill_2.fastq"
+    threads: 4
+    shell:
+        """
+        unpigz -k -c {input.i1} > {output.in1};
+        unpigz -k -c {input.i2} > {output.in2};
+        """
+
+rule bam_pacbio:
+# bax2bam Version 0.0.8 #
+#     Rule that takes bax files and makes bam files for each movie, to use in Arrow 
+    output:
+        flag=".flags/0-data-prep/pacbio-bam-process.success"
+    threads: 20
+    shell:
+        """
+        mkdir -p reads/PACBIO/pacbio-bam/ && cd reads/PACBIO/pacbio-bam;
+
+        for bax in $( find ../ -name \*.1.bax.h5 );
+        do
+          bnm=$( basename $bax .1.bax.h5 );
+          dnm=$( dirname $bax );
+          bax2bam ${{dnm}}/${{bnm}}.1.bax.h5 ${{dnm}}/${{bnm}}.2.bax.h5 ${{dnm}}/${{bnm}}.3.bax.h5;
+        done
+
+        cd ../../../;
+        touch {output.flag};
+        """
+
+rule fix_ill:
+# Quick-ish rule that fixes fastq.gz input files for QUAST - saves having to get quast to do it every time
+    input:
+        i1="reads/ILL/ill_1.fastq.gz",
+        i2="reads/ILL/ill_2.fastq.gz"
+    output:
+        out1="reads/ILL/ill_quast_1.fastq.gz",
+        out2="reads/ILL/ill_quast_2.fastq.gz"
+    threads: 4
+    shell:
+        """
+        zcat {input.i1} | sed '/^@SRR/ s/ .*/ /g' | sed '/^@SRR/ s/ /\/1/g' | pigz -p {threads} > {output.out1};
+        zcat {input.i2} | sed '/^@SRR/ s/ .*/ /g' | sed '/^@SRR/ s/ /\/2/g' | pigz -p {threads} > {output.out2};
+        """
+
+rule ratatosk_nano:
+# Rule to correct nanopore reads to HiFi-level quality
+    input:
+        ill="reads/ILL/ill_combined.fastq.gz",
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        nanocor="reads/NANO/nano-corrected.fastq.gz"
+    threads: 20
+    shell:
+        """
+        mkdir -p reads/NANO/ratatosk && cd reads/NANO/ratatosk
+
+        Ratatosk -s ../../../{input.ill} -l ../../../{input.nano} -o nano-ratatosk -c 20;
+
+        mv nano-ratatosk.fasta ../nano-corrected.fasta
+        cd .. && rm -rf ratatosk && cd ../..
+        """

@@ -1,0 +1,207 @@
+##############################
+# ASSEMBLY FROM PACBIO READS #
+##############################
+
+### Requires data cleaning first
+### Should have:
+###   - reads/PACBIO/pacbio.fastq.gz
+
+rule canu_pacbio:
+# Canu Version 1.9 #
+#     Local, not on grid - much faster than nanopore
+#     genomeSize param
+    input:
+        pb="reads/PACBIO/pacbio.fastq.gz"
+    output:
+        scf="1-assembly/PACBIO/canu-pacbio/canu-pacbio-scaffold.fa",
+        stats="3-metrics/assembly-stats/PACBIO/canu-pacbio/canu-pacbio-scaffold.txt"
+    log:
+        "logs/PACBIO/canu-pacbio/canu-pacbio.log"
+    benchmark:
+        "benchmarks/PACBIO/canu-pacbio/canu-pacbio-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        canu -p canu-pacbio -d 1-assembly/PACBIO/canu-pacbio/ genomeSize={config[genomesize]} -pacbio-raw {input.pb} -useGrid=false;
+
+        cp 1-assembly/PACBIO/canu-pacbio/canu-pacbio.contigs.fasta {output.scf}
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule falcon_pacbio:
+# FALCON Version WHO KNOWS - 0.3.0? #
+#     Requires SPECIFICALLY FORMATTED fasta file - script for that, see scripts/falcon_name_fasta.pl
+#     needs config file - need to automate this
+#     ALSO needs additional environment - denovo_asm3 works
+#     What a picky package
+    input:
+        pb="reads/PACBIO/pacbio.fastq.gz",
+        conf="config/default-falcon.cfg"
+    output:
+        scf="1-assembly/PACBIO/falcon-pacbio/falcon-pacbio-scaffold.fa",
+        stats="3-metrics/assembly-stats/PACBIO/falcon-pacbio/falcon-pacbio-scaffold.txt",
+        fa=temp("1-assembly/PACBIO/falcon-pacbio/pacbio.fasta"),
+        txt=temp("1-assembly/PACBIO/falcon-pacbio/pacbio-name-table.txt")
+    log:
+        "logs/PACBIO/falcon-pacbio/falcon-pacbio.log"
+    benchmark:
+        "benchmarks/PACBIO/falcon-pacbio/falcon-pacbio-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/PACBIO/falcon-pacbio
+        gunzip -k -c ../../../{input.pb} | sed -n -e '1~4s/^@/>/p;2~4p' | perl ../../../scripts/falcon_name_fasta.pl -o pacbio.fasta -t pacbio-name-table.txt -i -;
+        touch input.fofn
+        realpath pacbio.fasta >> input.fofn
+        cp ../../../{input.conf} falcon.cfg;
+        sed -i 's|YOURGENOMESIZE|{config[genomesize]}|' falcon.cfg
+
+        fc_run falcon.cfg;
+
+        cp 2-asm-falcon/p_ctg.fa ../../../{output.scf};
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule flye_pacbio:
+# Flye v 2.8 #
+#     genome-size 
+    input:
+        pb="reads/PACBIO/pacbio.fastq.gz"
+    output:
+        scf="1-assembly/PACBIO/flye-pacbio/flye-pacbio-scaffold.fa",
+        stats="3-metrics/assembly-stats/PACBIO/flye-pacbio/flye-pacbio-scaffold.txt"
+    log:
+        "logs/PACBIO/flye-pacbio/flye-pacbio.log"
+    benchmark:
+        "benchmarks/PACBIO/flye-pacbio/flye-pacbio-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        flye --pacbio-raw {input.pb} --genome-size {config[genomesize]} --out-dir 1-assembly/PACBIO/flye-pacbio/ --threads {threads}
+        mv 1-assembly/PACBIO/flye-pacbio/assembly.fasta {output.scf}
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule mecat2_pacbio:
+# MECAT2 Version 20190314 #
+#     Makes config file, corrects reads, then assembles
+    input:
+        pacbio="reads/PACBIO/pacbio.fastq.gz"
+    output:
+        scf="1-assembly/PACBIO/mecat2-pacbio/mecat2-pacbio-scaffold.fa",
+        stats="3-metrics/assembly-stats/PACBIO/mecat2-pacbio/mecat2-pacbio-scaffold.txt"
+    log:
+        "logs/PACBIO/mecat2-pacbio/mecat2-pacbio.log"
+    benchmark:
+        "benchmarks/PACBIO/mecat2-pacbio/mecat2-pacbio-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/PACBIO/mecat2-pacbio/
+
+        mecat.pl config mecat2-config.txt;
+
+        readpath=$( realpath ../../../{input.pacbio} );
+
+        sed -i 's|PROJECT=|PROJECT=mecat2|' mecat2-config.txt;
+        sed -i "s|RAWREADS=|RAWREADS=$readpath|" mecat2-config.txt;
+        sed -i 's|GENOME_SIZE=|GENOME_SIZE={config[genomesize]}|' mecat2-config.txt;
+        sed -i 's|THREADS=4|THREADS={threads}|' mecat2-config.txt;
+        sed -i 's|CLEANUP=0|CLEANUP=1|' mecat2-config.txt;
+
+        mecat.pl correct mecat2-config.txt;
+        mecat.pl trim mecat2-config.txt;
+        mecat.pl assemble mecat2-config.txt;
+
+		cp mecat2/4-fsa/contigs.fasta ../../../{output.scf};
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule miniasm_pacbio:
+# miniasm Version 0.3 #
+#     Requires an awk script that doesn't work well with Snakemake internally - scripts/mini-awk.sh for details
+#     Requires minimap2 (v 2.16)
+    input:
+        pb="reads/PACBIO/pacbio.fastq.gz"
+    output:
+        scf="1-assembly/PACBIO/miniasm-pacbio/miniasm-pacbio-scaffold.fa",
+        stats="3-metrics/assembly-stats/PACBIO/miniasm-pacbio/miniasm-pacbio-scaffold.txt",
+        aln=temp("1-assembly/PACBIO/miniasm-pacbio/miniasm-pacbio-align.paf"),
+        gfa=temp("1-assembly/PACBIO/miniasm-pacbio/miniasm-pacbio-graph.gfa")
+    log:
+        "logs/PACBIO/miniasm-pacbio/miniasm-pacbio.log"
+    benchmark:
+        "benchmarks/PACBIO/miniasm-pacbio/miniasm-pacbio-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/PACBIO/miniasm-pacbio
+
+        minimap2 -x ava-pb -t {threads} ../../../{input.pb} ../../../{input.pb} > ../../../{output.aln};
+        miniasm -f ../../../{input.pb} ../../../{output.aln} > ../../../{output.gfa};
+        bash ../../../scripts/mini-awk.sh miniasm-pacbio-graph.gfa miniasm-pacbio-scaffold.fa;
+
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule raven_pacbio:
+# Raven Version 0.0.5 #
+#     Does 2 rounds of polishing with Racon by default - turn off with -p 0 to make fair comparison
+    input:
+        pb="reads/PACBIO/pacbio.fastq.gz"
+    output:
+        scf="1-assembly/PACBIO/raven-pacbio/raven-pacbio-scaffold.fa",
+        stats="3-metrics/assembly-stats/PACBIO/raven-pacbio/raven-pacbio-scaffold.txt"
+    log:
+        "logs/PACBIO/raven-pacbio/raven-pacbio.log"
+    benchmark:
+        "benchmarks/PACBIO/raven-pacbio/raven-pacbio-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/PACBIO/raven-pacbio/
+
+        raven -p 0 -t {threads} ../../../{input.pb} > ../../../{output.scf};
+
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule wtdbg2_pacbio:
+# WTDBG2 (redbean?) Version 2.3 - should update to 2.5? #
+#     2 steps
+#     g = genome size 
+    input:
+        pb="reads/PACBIO/pacbio.fastq.gz"
+    output:
+        scf="1-assembly/PACBIO/wtdbg2-pacbio/wtdbg2-pacbio-scaffold.fa",
+        stats="3-metrics/assembly-stats/PACBIO/wtdbg2-pacbio/wtdbg2-pacbio-scaffold.txt",
+        lay=temp("1-assembly/PACBIO/wtdbg2-pacbio/wtdbg2-pacbio.ctg.lay.gz")
+    log:
+        "logs/PACBIO/wtdbg2-pacbio/wtdbg2-pacbio.log"
+    benchmark:
+        "benchmarks/PACBIO/wtdbg2-pacbio/wtdbg2-pacbio-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/PACBIO/wtdbg2-pacbio/
+
+        wtdbg2 -x rs -g {config[genomesize]} -t {threads} -i ../../../{input.pb} -fo wtdbg2-pacbio;
+        wtpoa-cns -t {threads} -i wtdbg2-pacbio.ctg.lay.gz -fo wtdbg2-pacbio-scaffold.fa;
+
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+
+

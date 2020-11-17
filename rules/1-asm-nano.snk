@@ -1,0 +1,325 @@
+################################
+# ASSEMBLY FROM NANOPORE READS #
+################################
+
+### Requires data cleaning first
+### Should have:
+###   - reads/NANO/nano.fastq.gz
+
+rule canu_nano:
+# Canu Version 1.9 #
+#     Non-grid version - VERY slow with same results as grid
+#     genomeSize param
+    input:
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        scf="1-assembly/NANO/canu-nano/canu-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/canu-nano/canu-nano-scaffold.txt"
+    log:
+        "logs/NANO/canu-nano/canu-nano.log"
+    benchmark:
+        "benchmarks/NANO/canu-nano/canu-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        canu -p canu-nano -d 1-assembly/NANO/canu-nano/ genomeSize={config[genomesize]} -nanopore-raw {input.nano} -useGrid=false;
+
+        cp 1-assembly/NANO/canu-nano/canu-nano.contigs.fasta {output.scf}
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule canu_fast_nano:
+# Canu Version 1.9 #
+#     Fast option - less than a third of the time, different results (less contiguous)
+#     genomeSize param
+    input:
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        scf="1-assembly/NANO/canu-fast-nano/canu-fast-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/canu-fast-nano/canu-fast-nano-scaffold.txt"
+    log:
+        "logs/NANO/canu-fast-nano/canu-fast-nano.log"
+    benchmark:
+        "benchmarks/NANO/canu-fast-nano/canu-fast-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        canu -p canu-fast-nano -d 1-assembly/NANO/canu-fast-nano/ genomeSize={config[genomesize]} -nanopore-raw {input.nano} -useGrid=false -fast;
+
+        cp 1-assembly/NANO/canu-fast-nano/canu-fast-nano.contigs.fasta {output.scf}
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule flye_nano:
+# Flye v 2.8 #
+#     genome-size param not required with 2.8
+    input:
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        scf="1-assembly/NANO/flye-nano/flye-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/flye-nano/flye-nano-scaffold.txt"
+    log:
+        "logs/NANO/flye-nano/flye-nano.log"
+    benchmark:
+        "benchmarks/NANO/flye-nano/flye-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        flye --nano-raw {input.nano} --genome-size {config[genomesize]} --out-dir 1-assembly/NANO/flye-nano/ --threads {threads};
+
+        mv 1-assembly/NANO/flye-nano/assembly.fasta {output.scf}
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule miniasm_nano:
+# miniasm Version 0.3 #
+#     Requires an awk script that doesn't work well with Snakemake internally - scripts/mini-awk.sh for details
+#     Requires minimap2 (v 2.16)
+    input:
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        scf="1-assembly/NANO/miniasm-nano/miniasm-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/miniasm-nano/miniasm-nano-scaffold.txt",
+        aln=temp("1-assembly/NANO/miniasm-nano/miniasm-nano-align.paf"),
+        gfa=temp("1-assembly/NANO/miniasm-nano/miniasm-nano-graph.gfa")
+    log:
+        "logs/NANO/miniasm-nano/miniasm-nano.log"
+    benchmark:
+        "benchmarks/NANO/miniasm-nano/miniasm-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/NANO/miniasm-nano
+
+        minimap2 -x ava-ont -t {threads} ../../../{input.nano} ../../../{input.nano} > ../../../{output.aln};
+        miniasm -f ../../../{input.nano} ../../../{output.aln} > ../../../{output.gfa};
+        bash ../../../scripts/mini-awk.sh miniasm-nano-graph.gfa miniasm-nano-scaffold.fa;
+
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule necat_nano:
+# NECAT Version 0.0.1 (20200803) #
+#     Makes config file, corrects reads, then assembles
+#     can also bridge contigs and polish contigs as well
+    input:
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        scf="1-assembly/NANO/necat-nano/necat-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/necat-nano/necat-nano-scaffold.txt"
+    log:
+        "logs/NANO/necat-nano/necat-nano.log"
+    benchmark:
+        "benchmarks/NANO/necat-nano/necat-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/NANO/necat-nano/
+
+        necat.pl config necat-config.txt;
+
+        realpath ../../../{input.nano} > ont_reads.txt;
+
+        sed -i 's|PROJECT=|PROJECT=necat|' necat-config.txt;
+        sed -i 's|ONT_READ_LIST=|ONT_READ_LIST=ont_reads.txt|' necat-config.txt;
+        sed -i 's|GENOME_SIZE=|GENOME_SIZE={config[genomesize]}|' necat-config.txt;
+        sed -i 's|THREADS=4|THREADS={threads}|' necat-config.txt;
+
+        necat.pl assemble necat-config.txt;
+
+		cp necat/4-fsa/contigs.fasta ../../../{output.scf};
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule necat_nano_bridge:
+# NECAT Version 0.0.1 (20200803) #
+#     Makes config file, corrects reads, then assembles
+#     can also bridge contigs and polish contigs as well
+    input:
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        scf="1-assembly/NANO/necat-bridge-nano/necat-bridge-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/necat-bridge-nano/necat-bridge-nano-scaffold.txt"
+    log:
+        "logs/NANO/necat-bridge-nano/necat-bridge-nano.log"
+    benchmark:
+        "benchmarks/NANO/necat-bridge-nano/necat-bridge-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/NANO/necat-bridge-nano/
+
+        necat.pl config necat-config.txt;
+
+        sed -i 's|PROJECT=|PROJECT=necat|' necat-config.txt;
+        sed -i 's|ONT_READ_LIST=|ONT_READ_LIST=../../../{input.nano}|' necat-config.txt;
+        sed -i 's|GENOME_SIZE=|GENOME_SIZE={config[genomesize]}|' necat-config.txt;
+        sed -i 's|THREADS=4|THREADS={threads}|' necat-config.txt;
+
+        necat.pl bridge necat-config.txt;
+
+		cp necat/6-bridge_contigs/polished_contigs.fasta ../../../{output.scf};
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule raven_nano:
+# Raven Version 0.0.5 #
+#     Does 2 rounds of polishing with Racon by default - turn off with -p 0 to make fair comparison
+    input:
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        scf="1-assembly/NANO/raven-nano/raven-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/raven-nano/raven-nano-scaffold.txt"
+    log:
+        "logs/NANO/raven-nano/raven-nano.log"
+    benchmark:
+        "benchmarks/NANO/raven-nano/raven-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/NANO/raven-nano/ 
+
+        raven -p 0 -t {threads} ../../../{input.nano} > ../../../{output.scf};
+
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule shasta_nano:
+# Shasta Version 0.3.0 #
+#     Requires fasta file, NOT fastq, don't think it accepts gzipped
+    input:
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        scf="1-assembly/NANO/shasta-nano/shasta-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/shasta-nano/shasta-nano-scaffold.txt",
+        fa=temp("1-assembly/NANO/shasta-nano/nano.fasta")
+    log:
+        "logs/NANO/shasta-nano/shasta-nano.log"
+    benchmark:
+        "benchmarks/NANO/shasta-nano/shasta-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        gunzip -k -c {input.nano} | sed -n -e '1~4s/^@/>/p;2~4p' > {output.fa};
+        cd 1-assembly/NANO/shasta-nano/
+
+        shasta --input ../../../{output.fa} --threads {threads}
+
+        cp ShastaRun/Assembly.fasta ../../../{output.scf}
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule wtdbg2_nano:
+# WTDBG2 (redbean?) Version 2.3 - should update to 2.5? #
+#     2 steps
+#     g = genome size - need to parametrise
+    input:
+        nano="reads/NANO/nano.fastq.gz"
+    output:
+        scf="1-assembly/NANO/wtdbg2-nano/wtdbg2-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/wtdbg2-nano/wtdbg2-nano-scaffold.txt",
+        lay=temp("1-assembly/NANO/wtdbg2-nano/wtdbg2-nano.ctg.lay.gz")
+    log:
+        "logs/NANO/wtdbg2-nano/wtdbg2-nano.log"
+    benchmark:
+        "benchmarks/NANO/wtdbg2-nano/wtdbg2-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/NANO/wtdbg2-nano/
+
+        wtdbg2 -x ont -g {config[genomesize]} -t {threads} -i ../../../{input.nano} -fo wtdbg2-nano
+        wtpoa-cns -t {threads} -i wtdbg2-nano.ctg.lay.gz -fo wtdbg2-nano-scaffold.fa
+
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+## Using Ratatosk-corrected Nanopore reads:
+
+rule flye_corr_nano:
+# Flye v 2.8 #
+#     genome-size param not required with 2.8
+    input:
+        nano="reads/NANO/nano-corrected.fasta"
+    output:
+        scf="1-assembly/NANO/flye-corr-nano/flye-corr-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/flye-corr-nano/flye-corr-nano-scaffold.txt"
+    log:
+        "logs/NANO/flye-corr-nano/flye-corr-nano.log"
+    benchmark:
+        "benchmarks/NANO/flye-corr-nano/flye-corr-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        flye --pacbio-hifi {input.nano} --genome-size {config[genomesize]} --out-dir 1-assembly/NANO/flye-corr-nano/ --threads {threads};
+
+        mv 1-assembly/NANO/flye-corr-nano/assembly.fasta {output.scf}
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule raven_corr_nano:
+# Raven Version 0.0.5 #
+#     Does 2 rounds of polishing with Racon by default - turn off with -p 0 to make fair comparison
+    input:
+        nano="reads/NANO/nano-corrected.fasta"
+    output:
+        scf="1-assembly/NANO/raven-corr-nano/raven-corr-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/raven-corr-nano/raven-corr-nano-scaffold.txt"
+    log:
+        "logs/NANO/raven-nano/raven-nano.log"
+    benchmark:
+        "benchmarks/NANO/raven-nano/raven-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/NANO/raven-corr-nano/ 
+
+        raven -p 0 -t {threads} ../../../{input.nano} > ../../../{output.scf};
+
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
+
+rule wtdbg2_corr_nano:
+# WTDBG2 (redbean?) Version 2.3 - should update to 2.5? #
+#     2 steps
+#     g = genome size - need to parametrise
+    input:
+        nano="reads/NANO/nano-corrected.fasta"
+    output:
+        scf="1-assembly/NANO/wtdbg2-corr-nano/wtdbg2-corr-nano-scaffold.fa",
+        stats="3-metrics/assembly-stats/NANO/wtdbg2-corr-nano/wtdbg2-corr-nano-scaffold.txt",
+        lay=temp("1-assembly/NANO/wtdbg2-corr-nano/wtdbg2-corr-nano.ctg.lay.gz")
+    log:
+        "logs/NANO/wtdbg2-corr-nano/wtdbg2-corr-nano.log"
+    benchmark:
+        "benchmarks/NANO/wtdbg2-corr-nano/wtdbg2-corr-nano-benchmark.txt"
+    threads: 20
+    shell:
+        """
+        cd 1-assembly/NANO/wtdbg2-corr-nano/
+
+        wtdbg2 -x ccs -g {config[genomesize]} -t {threads} -i ../../../{input.nano} -fo wtdbg2-corr-nano
+        wtpoa-cns -t {threads} -i wtdbg2-corr-nano.ctg.lay.gz -fo wtdbg2-corr-nano-scaffold.fa
+
+        cd ../../..
+
+        assembly-stats {output.scf} > {output.stats};
+        """
